@@ -1,0 +1,12 @@
+# Vim/gVim work files
+*.sw?
+
+# Log & temp files
+**/?
+**/?.*
+**/fred
+**/log
+**/*.log
+**/*.sav
+
+#### END OF FILE
