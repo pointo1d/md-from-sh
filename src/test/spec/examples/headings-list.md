@@ -1,6 +1,6 @@
 INFO - The 'standard' headings are (in order of generation)...
 
-    File | Title
+    File
     Synopsis
     Description
     Where

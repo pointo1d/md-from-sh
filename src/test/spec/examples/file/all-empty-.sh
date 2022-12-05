@@ -4,11 +4,14 @@
 # File:
 # Synopsis:
 # Description:
+# Where:
 # Opts:
 # Args:
+# Returns:
 # Env Vars:
 # Notes:
 # To Do:
+# Doc Links:
 # Files:
 # License:
 # Copyright:

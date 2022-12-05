@@ -1,2 +1,4 @@
-WARNING - Empty section: 'Description' - line 1
-WARNING - Empty section: 'Synopsis' - line 4
+WARNING - Empty section: 'File' - line 1 (defaults not enabled)
+WARNING - Empty section: 'Author' - line 4 (defaults not enabled)
+WARNING - Empty section: 'Date' - line 7 (defaults not enabled)
+WARNING - Empty markdown

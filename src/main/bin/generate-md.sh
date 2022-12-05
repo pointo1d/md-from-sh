@@ -7,16 +7,18 @@
 #               - 1 - 
 #               - 2 - warning encountered whilst fatal warning enabled ('-w')
 # To Do:        - Optional default content generation.
+#               - Missing section(s) reporting.
 #               - Implement fatal/non-fatal warning functionality
 #               - List processing - both explicit & implicit.
 #               - Facilitate near-BNF spec for content definitions (& ordering).
-#               - Missing section(s) reporting.
 #               - Optional ToC generation.
 #               - Auto-indented lists.
 #               - Configurable sections.
 #               - Configurable defaults (for empty sections).
 #               - Split out content related definitions to separate file(s).
 #               - Parse opts and args from code i.e. auto-synopsis generation.
+#               - Implemnt alternative synopsis entries.
+#               - Implement default content generation (c/w merely reporting)
 # Notes:
 # - Wheresoever appropriate, sections are normalized to match /[:digit:]+: .*/
 # - For the purposes of this exercise i.e. markdown.generate, there are 2
@@ -56,17 +58,18 @@ declare \
   ) \
   FuncHdrOrder=( 'Function' "${HdrContentOrder[@]}" ) \
   ContentOrder=(
-    'File | Title' "${HdrContentOrder[@]}" 'Functions' 'Doc Links' 'Files'
+    'File' "${HdrContentOrder[@]}" 'Functions' 'Doc Links' 'Files'
     'To Do' 'Author' 'Date' 'Copyright' 'License'
   )
 
 declare -A CONTENT=() CURRENT=() LOOKAHEAD=() \
   SECTION=( [name]= [lineno]= [content]= ) \
-  Defaults=( 
+  DEFAULTS=( 
     ['File']='${FNAME##*/}'
     ['Title']='${FNAME##*/}'
-    ['Author']="${LOGNAME:-${USERNAME:?'No user name'}}"
-    ['Date']="$(date)"
+    ['Synopsis']='\`\`\`${FNAME##*/}\`\`\`'
+    ['Author']='${LOGNAME:-${USERNAME:?"No user name"}}'
+    ['Date']='$(date +"%A %b %d %Y")'
   )
 
 # Initialize the variables as 1st part of dynamic section definition.
@@ -151,7 +154,7 @@ parse.report.warn() {
               ;;
   esac
 
-  report.warn "$* - line $lineno"
+  report.warn "$1 - line $lineno ${2:+($2)}"
 }
 
 # ------------------------------------------------------------------------------
@@ -257,8 +260,6 @@ file.read.line() {
   eval $SHOPT
 
   : $(declare -p CURRENT)
-
-  #case ${CURRENT[class]} in eof) return 1 ;; *) return 0 ;; esac
 }
 
 # ------------------------------------------------------------------------------
@@ -280,22 +281,60 @@ parse.section.find-name() {
   esac
 }
 
+markdown.section.generate-default() {
+  local sect=$"1"
+
+  case ${DEFAULTS[$sect]:-n} in
+    n)  printf "# $sect\n\nNone." ;;
+    *)  eval printf "# $sect\n\n$content" ;;
+  esac
+}
+
 # ------------------------------------------------------------------------------
-# Description:
+# Description:  Routine to generate the markdown for the given section ...
+#               having first extracted the line number - which is always the
+#               first token on the content.
 # ------------------------------------------------------------------------------
 markdown.section.generate() {
-  local sect="${1:?'No sect name'}" content ; content="${CONTENT["$sect"]}"
+  local sect="${1:?'No sect name'}" content="${CONTENT["$sect"]}"
 
-  case "c${content//[[:space:]]}" in c) return ;; esac
+  # Extract the line number and remove it from the local copy of the content
+  local lineno="${content%% *}" ; content="${content##$lineno }"
 
-  case "$sect" in
-    File|\
-    Title)        builtin echo -e "# $content" ;;
-    Synopsis)     builtin echo -e "# $1\n\n    $content" ;;
-    *)            builtin echo -e "# $1\n\n$content" ;;
+  # Update the content - to remove the line number
+  CONTENT["$sect"]="$content"
+
+  case "c${content//[[:space:]]}" in
+    c)  # It's an empty section, so report it iff default content generation
+        # isn't enabled - start by defining the core message
+        local msg ; case ${GEN_DEFAULT_CONTENT:-n} in
+          n)  # Empty, default not enabled, so update the warning message
+              msg='defaults not enabled'
+              ;;
+          *)  # Otherwise, generate the default content for the section
+              content="${DEFAULTS[${sect:-$sect:-n}]:-"None."}"
+              eval content="$content"
+
+              # Update the `records'
+              CONTENT[$sect]="$content"
+
+              # ... and extend the warning message
+              msg='default used'
+              ;;
+        esac
+
+        parse.report.warn $lineno "Empty section: '$sect'" "$msg"
+        ;;
   esac
 
-  printf "\n---\n"
+  case "${#content}" in 0) return ;; esac
+
+  case "$sect" in
+   File|Title)  printf "# $content" ;;
+   *)           printf "# $1\n\n$content" ;;
+  esac
+
+  printf "\n\n---\n\n"
 }
 
 # ------------------------------------------------------------------------------
@@ -303,23 +342,22 @@ markdown.section.generate() {
 # ------------------------------------------------------------------------------
 markdown.generate() {
   local sect ; for sect in "${SECTIONS[@]}" ; do
-    case "${CONTENT["$sect"]:-n}" in
-      n)  continue ;;
-      *)  markdown.section.generate "$sect" ;;
+    case ${CONTENT[$sect]:-n} in
+      n)  # The section wasn't detected, so ignore it
+          continue
+          ;;
     esac
+
+    markdown.section.generate "$sect"
   done
 
-  local e="${CONTENT[*]}"
-  case "e${e//[[:space:]]}" in e) : ;; *) printf "\nEND OF FILE\n" ;; esac
-}
-
-# ------------------------------------------------------------------------------
-# Description:
-# ------------------------------------------------------------------------------
-markdown.generate-default() {
-  case ${GEN_DEFAULT_CONTENT:-n} in n) return ;; esac
-
-  markdown.generate-content
+  local mt="${CONTENT[*]}" ; mt="${mt//[[:space:]]}"
+  case "${#mt}" in
+    0)  report.warn "Empty markdown"
+        return
+        ;;
+    *)  printf "END OF FILE\n" ;;
+  esac
 }
 
 # ------------------------------------------------------------------------------
@@ -363,34 +401,19 @@ parse.line.blank() {
 # Env Vars:     $CONTENT, $SECTION
 # ------------------------------------------------------------------------------
 parse.section.end() {
-  case "${SECTION[name]:-n}" in
-    n)  return ;;
-    *)  # Ensure an open paragraph is appended to the section body - by
+  case ${SECTION[name]:+y} in
+    y)  # Ensure an open paragraph is appended to the section body - by
         # simulating an end-of-paragraph situation
         parse.line.blank
         
-        # Now do the section body itself
-        declare content="${SECTION[content]:-}"
-        : "e${content//[[:space:]]}"
-        case "e${content//[[:space:]]}" in
-          e)  # It's an empty section, so report it iff default content
-              # generation isn't enabled
-              case ${GEN_DEFAULT_CONTENT:-n} in
-                n)  parse.report.warn \
-                      ${SECTION[lineno]} \
-                      "Empty section: '${SECTION[name]}'"
-                    ;;
-                *)  # Generate the default content
-                    ;;
-              esac
-              ;;
-        esac
-
-        local content="${SECTION[content]##*( )}"
-        CONTENT[${SECTION[name]}]="${content%%*( )}"
-        SECTION=( [name]= [lineno]= [content]= )
+        # Now do the section body itself - note that the section body is
+        # prefixed by the line number on which the header was detected
+        CONTENT[${SECTION[name]}]="${SECTION[lineno]} ${SECTION[content]}"
+        : $(declare -p CONTENT)
         ;;
   esac
+
+  SECTION=( [name]= [lineno]= [content]= )
 }
 
 # ------------------------------------------------------------------------------
@@ -532,7 +555,7 @@ parse.line.section-header() {
   local spaces="$name:" ; spaces="${spaces//[:A-Za-z]/ }" ; : ${#spaces}
   CURRENT[content]="${CURRENT[content]//$name:/$spaces}"
 
-  # As it's a new section, initialise the section  & paragraph records
+  # As it's a new section, initialise the section & paragraph records
   SECTION=( [name]="$name" [lineno]=${CURRENT[lineno]} [content]= )
   PARA=""
 
@@ -588,15 +611,13 @@ eval $SHOPT
 
 # Read & parse the whole file
 while file.read.line ; do
-  : $(declare -p SECTION)
   parse.dispatcher
-  : $(declare -p SECTION)
 
   case ${CURRENT[class]:-} in eof) break ;; esac
 done
 
 # Before finally generating the/any markdown
-shopt -ou xtrace
+#shopt -ou xtrace
 markdown.generate
 
 exit $?
