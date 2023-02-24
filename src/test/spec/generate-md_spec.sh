@@ -3,6 +3,7 @@
 OUT=src/main/bin/generate-md.sh
 EXAMPLES_DIR=${SHELLSPEC_SPECFILE%/*}/examples
 FILE_DIR="$EXAMPLES_DIR/file"
+LISTS_DIR="$EXAMPLES_DIR/lists"
 
 Describe "$OUT - list heading command"
   md="$EXAMPLES_DIR/headings-list.md"
@@ -45,10 +46,13 @@ End
 Describe "$OUT - empty behaviours"
   Parameters:matrix
     # scope (number of sections)
+#single
     none single multi all
     # Type of section entry
+#empty
     empty blank multi
     #  default enabled setting
+#no-default
     no-default default
   End
 
@@ -77,13 +81,11 @@ Describe "$OUT - empty behaviours"
       done
     }
 
-    %logger "$1 $2 $3"
     # Attempt to find the appropriate expectation file(s)
     for ext in sh md stderr ; do
       declare -n var=$ext
       efnm=$(find-test-file $ext $1 $2 $3)
 
-      %logger "$ext:: ${efnm:-}"
       if test "$efnm" ; then
         var=$efnm
       fi
@@ -92,15 +94,12 @@ Describe "$OUT - empty behaviours"
     test $3 = default && opts=d
 
     Skip if "Invalid empty file combination" test $1 = none -a $2 = 'blank'
-    Skip if "Default content generation NYI" test $1 = none -a $3 = 'default'
+    #Skip if "Default content generation NYI" test $1 = none -a $3 = 'default'
+    Skip if "Default content generation NYI" test $3 = 'default'
     Skip if "No source ('$sh')" test ! "${sh:-}"
     Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"
   
     When run script $OUT ${opts:+-d} $sh
-
-    if test $1 = none -a $2 != 'multi' -a $3 = 'no-default'  ; then
-      The status should not be success
-    fi
 
     if test "${md:-}" != '' ; then
       sed "
@@ -119,47 +118,87 @@ Describe "$OUT - empty behaviours"
       touch $stderr
       The stderr should equal "$(<$stderr)"
     fi
+  End
+End
 
-    %logger ':: '
+Describe "$OUT - line behaviours"
+  It "Continued lines handled properly"
+    sh=$FILE_DIR/continued-sect.sh
+    md=${sh/.sh/.md}
+
+    When run script $OUT $sh
+    The stdout should equal "$(<$md)"
+  End
+
+  It "Muliple paragraphs handled properly"
+    sh=$FILE_DIR/multi-para-section.sh
+    md=${sh/.sh/.md}
+
+    When run script $OUT $sh
+    The stdout should equal "$(<$md)"
   End
 End
 
 Describe "$OUT - lists"
   Parameters:matrix
     # List type
-    bullet number
+#    bullet numbered var mixed
+bullet
     # List spec `type'
-    implicit explicit
+#   explicit implicit
+explicit
+    # List nesting
+#    linear nested
+linear
   End
 
+  Example "G-P: $1-$2-$3"
+    src= md= stderr=
+
+    find-test-file() {
+#      %logger "find-test-file($1, $2, $3, $4)"
+      local fnms=() dir=$1 ext=$2 ; shift 2 ; args=( ${@} )
+
+      local dec2bin=() ; eval "dec2bin=( $(printf "{0..1}%.0s" $(seq 1 $#)) )"
+      
+      local i ; for i in $(seq $((${#dec2bin[@]}-1)) -1 0) ; do
+        local nm=''
+        local a ; for a in $(seq 0 $((${#dec2bin[$i]} - 1))) ; do
+          test ${dec2bin[$i]:$a:1} = 1 && nm+=${args[$a]}
+          nm+='-'
+        done
+
+        nm=$dir/${nm%-}.$ext
+        test -f $nm || continue
+
+        printf "$nm"
+        break
+      done
+    }
+
+#    %logger "$1 $2 $3"
+
+    for ext in sh md stderr ; do
+      declare -n var=$ext
+
+      efnm=$(find-test-file $LISTS_DIR $ext $1 $2 $3)
+
+#      %logger "$ext:: ${efnm:-}"
+      if test "${efnm:-}" ; then
+        var=$efnm
+      fi
+    done
+
+    Skip if "Implicit bullet lists not supported!!" test $1$2 = bulletimplicit
+    Skip if "Nested lists not yet implemented!!" test $3 = nested
+    Skip if "No source ('${sh:-}')" test ! "${sh:-}"
+    Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"
+
+    When run script $OUT ${sh:-}
+    The stdout should equal "$(<$md)"
+  End
 End
 
-#Describe "$OUT - Description/narrative"
-#  Parameters
-#    one-line-same-line
-#    one-line-line-after
-#    multi-line
-#    multi-para
-#  End
-#
-#  Example "G-P: $1"
-#    src="$EXAMPLES_DIR/narrative/$1.sh"
-#    md="$EXAMPLES_DIR/narrative/$1.md"
-#    stderr="$EXAMPLES_DIR/narrative/$1.stderr"
-#
-#    Skip if "NYI" test ! -f $src # -a ! -f $md -a ! -f $stderr
-#  
-#    When run script $OUT $src
-#    if test -f $md ; then
-#      The stdout should equal "$(<$md)"
-#    fi
-#    
-#    if test -f $stderr ; then
-#      The stderr should equal "$(<$stderr)"
-#    fi
-#  End
-#End
-#
 #Describe "$OUT - Explicit lists"
 #  Parameters:matrix
 #    bullet number mixed
@@ -208,47 +247,5 @@ End
 #    fi
 #  End
 #End
-#
-#Describe "$OUT - solely sections"
-#  Parameters
-#    only-file
-#    only-title
-#    only-synopsis
-#    only-opts-explicit-single
-#    only-opts-explicit-list
-#    only-opts-implicit-single
-#    only-opts-implicit-list
-#    only-env-vars-explicit-single
-#    only-env-vars-explicit-list
-#    only-env-vars-implicit-single
-#    only-env-vars-implicit-list
-#    only-notes-explicit-single
-#    only-notes-explicit-list
-#    only-to-do-single
-#    only-to-do--list
-#    only-files-explicit-single
-#    only-files-explicit-list
-#    only-author
-#    only-date
-#    only-license
-#    only-copyright
-#  End
-#
-#  Example "G-P: $1"
-#    src="$FILE_DIR/$1.sh"
-#    md="$FILE_DIR/$1.md"
-#    stderr="$FILE_DIR/$1.stderr"
-#
-#    Skip if "test NYI" test ! -f $md -a ! -f $stderr
-#  
-#    When run script $OUT $src
-#    if test -f $md ; then
-#      The stdout should equal "$(<$md)"
-#    fi
-#    if test -f $stderr ; then
-#      The stderr should equal "$(<$stderr)"
-#    fi
-#  End
-#End
-#
+
 ###### END OF FILE

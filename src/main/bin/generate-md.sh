@@ -19,9 +19,11 @@
 #               - Parse opts and args from code i.e. auto-synopsis generation.
 #               - Implemnt alternative synopsis entries.
 #               - Implement default content generation (c/w merely reporting)
+#               - Replace in-line stack functions with library
+#               - Add in capability to comment out doc lines.
 # Notes:
 # - Wheresoever appropriate, sections are normalized to match /[:digit:]+: .*/
-# - For the purposes of this exercise i.e. markdown.generate, there are 2
+# - For the purposes of this exercise i.e. doc.generator.generate, there are 2
 # _types_ of lists:
 #   - *explicit*  - lists where standard Markdown list prefixes are used i.e.
 #                   the use of `-` (bullet) or '<n>.' (numbered). Note that a
@@ -47,13 +49,13 @@
 # Date:         Sept 2022
 ################################################################################
 shopt -s extglob
-shopt -ou errexit
+shopt -os errexit xtrace
 declare SHOPT="$(shopt -op xtrace)"
 shopt -ou xtrace
 
 declare \
-  FNAME GEN_DEFAULT_CONTENT FATAL_WARNINGS PREVIOUS \
-  BLOCK=() FILE=() SECTIONS=() Indent=() HdrContentOrder=(
+  FNAME GEN_DEFAULT_CONTENT FATAL_WARNINGS \
+  FILE=() Sections=() INDENTS=() HdrContentOrder=(
     'Synopsis' 'Description' 'Where' 'Opts' 'Args' 'Returns' 'Env Vars' 'Notes'
   ) \
   FuncHdrOrder=( 'Function' "${HdrContentOrder[@]}" ) \
@@ -62,15 +64,14 @@ declare \
     'To Do' 'Author' 'Date' 'Copyright' 'License'
   )
 
-declare -A CONTENT=() CURRENT=() LOOKAHEAD=() \
-  SECTION=( [name]= [lineno]= [content]= ) \
-  DEFAULTS=( 
-    ['File']='${FNAME##*/}'
-    ['Title']='${FNAME##*/}'
-    ['Synopsis']='\`\`\`${FNAME##*/}\`\`\`'
-    ['Author']='${LOGNAME:-${USERNAME:?"No user name"}}'
-    ['Date']='$(date +"%A %b %d %Y")'
-  )
+  declare -A Content=() LINE=() BLOCK=() Para=( [type]= [content]= ) \
+    Sect=( [title]= [lineno]= [content]= ) DEFAULTS=( 
+      ['File']='${FNAME##*/}'
+      ['Title']='${FNAME##*/}'
+      ['Synopsis']='\`\`\`${FNAME##*/}\`\`\`'
+      ['Author']='${LOGNAME:-${USERNAME:?"No user name"}}'
+      ['Date']='$(date +"%A %b %d %Y")'
+    )
 
 # Initialize the variables as 1st part of dynamic section definition.
 declare sect ; for sect in "${ContentOrder[@]}" ; do
@@ -79,16 +80,26 @@ declare sect ; for sect in "${ContentOrder[@]}" ; do
           declare alts=() ; IFS='|' read -ra alts <<< "$sect"
           for sect in "${alts[@]}" ; do
             sect="${sect## }"
-            SECTIONS+=( "${sect%% }" )
+            Sections+=( "${sect%% }" )
           done
           ;;
     *)    sect="${sect## }"
-          SECTIONS+=( "${sect%% }" )
+          Sections+=( "${sect%% }" )
           ;;
   esac
 done
 
 eval $SHOPT
+
+anti-infinite-loop() {
+  case ${INFINITE_COUNT:-n} in
+    n)  INFINITE_COUNT_VAL=${1:?'No infinite count'}
+        INFINITE_COUNT=$INFINITE_COUNT_VAL
+        ;;
+    0)  report.fatal "Infinite count ($INFINITE_COUNT_VAL) reached" ;;
+    *)  : $((INFINITE_COUNT-=1)) ;;
+  esac
+}
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to report the given string to STDERR.
@@ -128,17 +139,6 @@ report.warn() {
   esac
 }
 
-declare INFINITE_COUNT INFINITE_COUNT_VAL
-anti-infinite-loop() {
-  case ${INFINITE_COUNT:-n} in
-    n)  INFINITE_COUNT_VAL=${1:?'No infinite count'}
-        INFINITE_COUNT=$INFINITE_COUNT_VAL
-        ;;
-    0)  report.fatal "Infinite count ($INFINITE_COUNT_VAL) reached" ;;
-    *)  : $((INFINITE_COUNT-=1)) ;;
-  esac
-}
-
 # ------------------------------------------------------------------------------
 # Description:
 # ------------------------------------------------------------------------------
@@ -147,8 +147,8 @@ report.info() { builtin echo -e "INFO - $*" ; }
 # ------------------------------------------------------------------------------
 # Description:
 # ------------------------------------------------------------------------------
-parse.report.warn() {
-  local lineno=${SECTION[lineno]} ; case $1 in
+line.parser.warn() {
+  local lineno=${Sect[lineno]} ; case $1 in
     +([0-9])) lineno=$1
               shift
               ;;
@@ -157,131 +157,512 @@ parse.report.warn() {
   report.warn "$1 - line $lineno ${2:+($2)}"
 }
 
+. ${BASH_SOURCE%%/bin/*}/lib/file.sh
+
 # ------------------------------------------------------------------------------
-# Description:  Routine to process the given line
-# Synopsis:     read-file [STR]
-# Args:         STR - optional name of the file to read, default - '-'
-# Env Vars:     $FNAME, $FILE
 # ------------------------------------------------------------------------------
-read-file() {
-  case "$1" in -) FNAME="/dev/stdin" ;; *) FNAME="$1" ;; esac
+#
+# Line handler related routines
+#
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
 
-  test -f $FNAME || report.fatal "File not found: '$FNAME'"
+# ------------------------------------------------------------------------------
+# Description:  Routine to determine, validate and dispatch the appropriate
+#               handler for the current line.
+# Env vars:     $LINE
+# ------------------------------------------------------------------------------
+line.parser.get-type() {
+  local shopt="$(shopt -po xtrace)"
+  set +o xtrace
 
-  mapfile -t FILE < "$FNAME" || exit 1
+  local OPTARG OPTIND opt content="$@" no_prefix ret
+  while getopts 'n' opt ; do
+    case $opt in
+      n)  no_prefix=t ;;
+    esac
+  done
 
-  : ${#FILE[@]}
-  case ${#FILE[@]} in 0) report.fatal "Empty file: '$FNAME'" ;; esac
+  shift $((OPTIND - 1))
+
+  case "$content" in
+    '#'|\
+    '#'+(-)|\
+    '# '+(-)|\
+    '#'+(#)|\
+    '# '+(#))   ret=ignore ;;
+    '#'+( ))    ret=para-blank ;;
+    _*'()'*|\
+    *._*'()'*)  ret=func-defn-prv ;;
+    *'()'*)     ret=func-defn-pub ;;
+    *)          content="${content### }"
+                case "${content## }" in
+                  [A-Z]+([- A-Za-z]):*) ret=sect-header ;;
+                  *( )-*)               ret=para-list-entry-bullet ;;
+                  *( )+([0-9).*)        ret=para-list-entry-enum ;;
+                  *)                    : ${Sect[title]:-n}
+                                        case ${Sect[title]:-n} in
+                                          n)  ret=ignore ;;
+                                          *)  ret=para-append ;;
+                                        esac
+                                        ;;
+                esac
+                ;;
+  esac
+
+  eval $shopt
+
+  printf "${ret:-}"
 }
 
 # ------------------------------------------------------------------------------
-# Description:  Routine to process the given line
-# Synopsis:     file.line._proc STR
-# Args:         STR - the line to process
-# Env Vars:     $CONTENT
+# Description:  Routine to determine, validate and dispatch the appropriate
+#               handler for the current line.
+# Env vars:     $LINE
 # ------------------------------------------------------------------------------
-line.classify() {
-  shopt -ou xtrace
+line.parser.dispatch.dispatch-it() {
+#  set +o xtrace
+  
+  local handler=$1 ; shift
 
-  local ret=ignore vnm=${1:-CURRENT}
-  local -n var=$vnm
+  case "${handler:=$(line.parser.get-type "$@")}" in
+    *.*)  : ;;
+    *)    handler=line.parser.$handler ;;
+  esac
 
-  case ${var[eof]:-n} in
-    n)  local line="${var[content]}"
-        case "$line" in
-          _*'()'*|\
-          *._*'()'*)  ret=prv-fun-proto ;;
-          *'()'*)     ret=pub-fun-proto ;;
-          '# '*)      line="${line### }"
-                      case "$line" in
-                        [A-Z]+([a-zA-z ]):*)  ret=section-header ;;
-                        +( )'#'+( )*)         ret=para-list-num-alt ;;
-                        +( )+([0-9]).+( )*)   ret=para-list-num ;;
-                        '$ '*)                ret=para-list-var ;;
-                        *( )'- '*)            ret=para-list-bullet ;;
-                        *( ))                 ret=blank ;;
-                        ---)                  ret=horiz-line ;;
-                        +(-)|+(\#))           : ;;
-                        *)                    : ${SECTION[name]:+y}
-                                              case ${SECTION[name]:+y} in
-                                                y)  ret=para-plain ;;
-                                              esac
+  case "n$(type -t $handler)" in
+    n)  report.fatal \
+          "Line handler not found: '$handler' - line $(file.line.number)::\n" \
+          "  '$(file.line.content)'"
+        ;;
+  esac
+
+  eval $SHOPT
+
+  : DISPATCHING $handler "$@"
+  $handler "$@"
+}
+
+line.parser.sect-header() {
+  local line="${1%%*( )}"
+
+  line.parser.dispatch -h doc.builder.sect.end
+  line.parser.dispatch -h doc.builder.sect.begin "$line"
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to determine, validate and dispatch the appropriate
+#               handler for the current line.
+# Env vars:     $LINE
+# ------------------------------------------------------------------------------
+line.parser.dispatch() {
+  # ----------------------------------------------------------------------------
+  # Description:  Local routine to determine, validate, report and dispatch the
+  #               appropriate handler for the current line.
+  # Env vars:     $LINE
+  # ----------------------------------------------------------------------------
+  dispatch-it() {
+    set +o xtrace
+  
+    local handler=$1 ; shift
+
+    case "${handler:=$(line.parser.get-type "$@")}" in
+      *.*)  : ;;
+      *)    handler=line.parser.$handler ;;
+    esac
+
+    case "n$(type -t $handler)" in
+      n)  report.fatal \
+            "Handler not found: '$handler' - line $(file.line.number)::\n" \
+            "  '$(file.line.content)'"
+          ;;
+    esac
+
+    eval $SHOPT
+
+    : DISPATCHING $handler "$@"
+    $handler "$@"
+  }
+
+  set +o xtrace
+
+  local OPTARG OPTIND opt handler
+  while getopts 'h:' opt ; do
+    case $opt in
+      h)  handler=$OPTARG ;;
+    esac
+  done
+
+  shift $((OPTIND - 1))
+
+  local line="${1:-}" ; line="${line### }"
+
+  : ${handler:=$(line.parser.get-type "$@")}
+
+  case ${handler##line.parser.} in
+    sect-header)    dispatch-it $handler "${line%%*( )}" ;;
+    func-defn-prv)  dispatch-it doc.builder.block.abort ;;
+    func-defn-pub)  dispatch-it doc.builder.block.end ;;
+    para-blank)     dispatch-it doc.builder.para.end
+                    dispatch-it line.parser.$handler
+                    ;;
+    *)              dispatch-it $handler "${line%%*( )}"
+                    ;;
+  esac
+
+  eval $SHOPT
+}
+
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+#
+# Doc generation routines
+#
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to close out the currently open paragraph - iff theres
+#               one currently open.
+# Env vars:     $Sect, $Para 
+# ------------------------------------------------------------------------------
+doc.builder.para.end() {
+  # End the current paragraph with the obligatory newline ... iff there's alread
+  # some content in the section
+  : $(declare -p Sect)
+  case "e${Para[content]//[:space:]}" in
+    e)  : ;;
+    *)  doc.builder.sect.append "${Para[content]}\n" ;;
+  esac
+
+  : $(declare -p Sect)
+  
+  # Reset the indent record
+  INDENTS=()
+
+  # Finally, reset the paragraph accumulator
+  Para=( [content]= [type]= )
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Dummy handler - provisioned solely to accept ignored
+#               lines i.e. prevent them (ignored lines) from terminating the
+#               script.
+# Env vars:     None. 
+# ------------------------------------------------------------------------------
+doc.builder.para.append() {
+  local OPTARG OPTIND opt no_prepend
+  while getopts 'n' opt ; do
+    case $opt in
+      n)  no_prepend=t ;;
+    esac
+  done
+
+  shift $((OPTIND - 1))
+
+  case ${no_prepend:-n} in
+    n)  Para[content]+="
+"
+        ;;
+  esac
+
+  Para[content]+="$@"
+}
+
+# ------------------------------------------------------------------------------
+# Description:  
+# ------------------------------------------------------------------------------
+doc.builder.sect.begin() {
+  local content="$*" title="${*%%:*}"
+
+  # Extract & validate the section header
+  local name ; case "${Sections[@]}" in
+    "$title "*|\
+    *"$title"*|\
+    *" $title")  name="$sect" ;;
+  esac
+
+  case "${name:-n}" in
+    n)  line.parser.warn "Unrecognised section title: $title"
+        return
+        ;;
+  esac
+
+  # As it's a new section, initialise the section & paragraph records
+  Sect=( [title]="$title" [lineno]=$(file.line.number) [content]= )
+
+  # Process the remaining line with the title replaced with it's equiv in
+  # spaces
+  local spaces="$title:" ; spaces="${spaces//[:A-Za-z]/ }" ; : ${#spaces}
+  line.parser.dispatch "${content/$title:/${spaces/# /#}}"
+
+  : $(declare -p Sect)
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to close out the currently open section - iff theres
+#               one currently open.
+# Synopsis:     parser.sect.close
+# Args:         None.
+# Env Vars:     $Content, $Sect
+# ------------------------------------------------------------------------------
+doc.builder.sect.end() {
+  # Ensure the open paragraph, if any, is closed out
+  line.parser.dispatch -h doc.builder.para.end
+
+  case ${Sect[title]:+y} in
+    y)  # Ensure an open paragraph is appended to the section body - by
+        # simulating an end-of-paragraph situation
+##        line.parser.para-blank
+        
+        # Now do the section body itself - note that the section body is
+        # prefixed by the line number on which the header was detected
+        Content[${Sect[title]}]="${Sect[lineno]} ${Sect[content]}"
+        : $(declare -p Content)
+        ;;
+  esac
+
+  Sect=( [title]= [lineno]= [content]= )
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to close out the currently open paragraph - iff theres
+#               one currently open.
+# Env vars:     $Sect, $Para 
+# ------------------------------------------------------------------------------
+doc.builder.sect.append() {
+  local content="${1:-}" no_spaces="${1//[[:space:]]/}"
+
+  : ${#Sect[content]}:${#no_spaces}
+  case ${#Sect[content]}:${#no_spaces} in
+    0:0)  : ;;
+    0:*)  Sect[content]="${@:-}" ;;
+    *)    Sect[content]+="${@:-}" ;;
+  esac
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to close out the currently open paragraph - iff theres
+#               one currently open.
+# Env vars:     $Sect, $Para 
+# ------------------------------------------------------------------------------
+doc.builder.block.end() {
+  line.parser.dispatch -h doc.builder.sect.end
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to close out the currently open paragraph - iff theres
+#               one currently open.
+# Env vars:     $Sect, $Para 
+# ------------------------------------------------------------------------------
+doc.builder.block.append() {
+  line.parser.dispatch -h line.parser.sect-append
+}
+
+# ------------------------------------------------------------------------------
+# Description:  
+# Env vars:     $Para, $Sect, $Content
+# ------------------------------------------------------------------------------
+line.parser.eof() {
+  # Close out the currently open block (if any)
+  line.parser.dispatch -h doc.builder.block.end
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a plain i.e. non-list, paragraph line.
+# Env vars:     $LINE, $Para 
+# ------------------------------------------------------------------------------
+line.parser.list-entry.continue() {
+  line.parser.dispatch -h line.parser.para-plain
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a list paragraph entry
+# Env vars:     $LINE, $Para 
+# ------------------------------------------------------------------------------
+line.parser.list-entry() {
+  # Determine the indent level of the current line
+  local indent="${1##+( )}" ; indent=$((${#1} - ${#indent}))
+
+  # Now determine if it's at variance to the indent level of the current list
+  case ${#INDENTS[@]} in
+    0)  # There's no list as yet,so start it
+        INDENTS=( $indent )
+        ;;
+    *)  # There is a list, so now determine if the current entry indentation is
+        # the same as/different to the existing list
+        case $((${INDENTS[0]} - indent)) in
+          0)  # Continuation of the existing list i.e. no change
+              :
+              ;;
+          -*) # New nested list, so push it onto the indent record
+              INDENTS=( $indent ${INDENTS[@]} )
+              ;;
+          *)  # Reversion ... to a previous level, so attempt to find it in the
+              # previous levels
+              case "${INDENTS[@]}" in
+                *" $indent"|\
+                *" $indent "*)  # It's on there, so now clear the indent stack
+                                # down to the current level
+                                local i
+                                for ((i ; i < ${#INDENTS[@]} ; i++)); do
+                                  case ${INDENTS[$i]} in
+                                    $indent)  # Found it
+                                              break
                                               ;;
-                      esac
-                      ;;
+                                    *)        # Not found, so remove it
+                                              INDENTS=( ${INDENTS[@]:1} )
+                                              ;;
+                                  esac
+                                done
+                                ;;
+                *)              report.fatal \
+                                  "Previous list indent level $indent not found"
+                                ;;
+              esac
+              ;;
         esac
         ;;
-    *)  ret=eof ;;
   esac
 
-  eval $SHOPT
-  : $ret
-
-  # Update the classification
-  eval $vnm[class]=$ret
-}
-
-# ------------------------------------------------------------------------------
-# Description:  Routine to read the given line number and classify it
-#               accordingly.
-# Synopsis:     file.read.line -l
-# Opts:         None.
-# Args:         None.
-# Returns:      Line, line number and classification made via $CURRENT as a
-#               direct copy of $LOOKAHEAD. Unlike file.line.lookahead, the
-#               cursor _is_ updated by the call.
-#               Returns true unless the read failed for whatsoever reason -
-#               currently eof.
-# Env vars:     $FILE, $CURRENT
-# Notes:        - $CURRENT is updated, as are the current & lookahead pointers.
-# ------------------------------------------------------------------------------
-file.read.line() {
-  shopt -ou xtrace
-
-  # Initialize iff 1st call, otherwise bump the pointers
-  case ${CURRENT[ptr]:-n} in
-    n)  CURRENT=( [ptr]=0 [lineno]=1 ) ;;
-    *)  CURRENT=(
-          [ptr]=$((CURRENT[ptr]+=1)) [lineno]=$((${CURRENT[ptr]} + 1))
-        )
+  # Append a newline if there's an entry already present
+  case ${Para[content]:-n} in
+    n)  ;;
+    *)  doc.builder.para.append -n "
+"
         ;;
   esac
 
-  : $(declare -p CURRENT)
-
-  # Now load & then classify the new current line
-  case ${CURRENT[ptr]} in
-    ${#FILE[@]})  CURRENT[eof]=t ;;
-    *)            CURRENT[content]="${FILE[${CURRENT[ptr]}]}" ;;
+  : ${#INDENTS[@]}
+  local indent ; case ${#INDENTS[@]} in
+    1)  indent='' ;;
+    *)  : ${#INDENTS[@]}, $(( ${#INDENTS[@]} * 2))
+        indent="$(printf "%*.0s" $(( ${#INDENTS[@]} * 2)))"
+        ;;
   esac
-  
-  line.classify
 
-  eval $SHOPT
-
-  : $(declare -p CURRENT)
+  doc.builder.para.append -n -- "${indent:-}${1##+( )}"
 }
 
 # ------------------------------------------------------------------------------
-# Description:  Local function to validate the given posited section name.
+# ------------------------------------------------------------------------------
+#
+# Line handler routines
+#
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a plain i.e. non-list, paragraph line.
+# Env vars:     $LINE, $Para 
+# ------------------------------------------------------------------------------
+line.parser.para-blank() {
+  : $(declare -p Sect)
+#  case ${#Sect[content]} in
+#    0)  : ;;
+#    y)  line.parser.dispatch -h doc.builder.sect.append "
+#"
+#        ;;
+#  esac
+  line.parser.dispatch -h doc.builder.sect.append "
+"
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a plain i.e. non-list, paragraph line.
+# Env vars:     $LINE, $Para 
+# ------------------------------------------------------------------------------
+line.parser.para-append() {
+  : "'${1:-}'"
+  local content="${1##*( )}" ; content="${content%%*( )}"
+  : "'${content:-}'"
+
+  case "${Sect[title]:-n}" in n) return ;; esac
+
+  case c${content//[[:space:]]} in c) return ;; esac
+
+  : "'${Para[content]:+}'"
+  Para[content]+="${Para[content]:+ }${content%%*( )}"
+  : "'${Para[content]:+}'"
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a bullet list paragraph entry
+# Env vars:     $LINE, $Para 
+# ------------------------------------------------------------------------------
+line.parser.para-list-entry-bullet() {
+  local content="$1" ; content="${content%%*( )}"
+  
+  line.parser.list-entry "${content### }"
+}
+
+line.parser.para-list-entry-bullet-append() { line.parser.append -n "$1" ; }
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a bullet list paragraph entry
+# Env vars:     $LINE, $Para 
+# ------------------------------------------------------------------------------
+line.parser.para-list-entry-enum-alt() {
+  local content="$1" ; content="${content%%*( )}"
+  content="${content###.+( )}"
+  
+  line.parser.list-entry "${content### }"
+}
+
+line.parser.para-list-entry-enum-alt() { line.parser.append -n "$1" ; }
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a bullet list paragraph entry
+# Env vars:     $LINE, $Para 
+# ------------------------------------------------------------------------------
+line.parser.para-list-entry-enum() {
+  local content="$1" ; content="${content%%*( )}"
+  content="${content##+([0-9]).+( )}"
+  
+  line.parser.list-entry "${content### }"
+}
+
+line.parser.para-list-entry-enum() { line.parser.append -n "$1" ; }
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a bullet list paragraph entry
+# Env vars:     $LINE, $Para 
+# ------------------------------------------------------------------------------
+line.parser.para-list-entry-var() {
+  local content="$1" ; content="${content%%*( )}"
+  
+  line.parser.list-entry "${content### }"
+}
+
+line.parser.para-list-entry-var() { line.parser.append -n "$1" ; }
+
+# ------------------------------------------------------------------------------
+# Description:  Dummy handler - provisioned solely to accept ignored
+#               lines i.e. prevent them (ignored lines) from terminating the
+#               script.
+# Env vars:     None. 
+# ------------------------------------------------------------------------------
+line.parser.ignore() {
+  # Line is to be ignored, but close out any open section
+  case "${Sect[title]:+y}" in y) doc.builder.sect.end ;; esac
+}
+
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# Doc generator routines
+# ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# Description:  Local function to generate the default content for the given
+#               section - if it has has one.
 # Synopsis:     section._validate-header STR
 # Opts:         None.
 # Args:         $1  - the posited section name (to be validated).
 # Vars:         None.
 # Returns:      $1 on STDOUT iff valid, nothing/empty string otherwise.
 # ------------------------------------------------------------------------------
-parse.section.find-name() {
-  # Get the section name
-  local sect="${1:?'No sect name'}" ; shift
-
-  case "${SECTIONS[@]}" in
-    "$sect "*|\
-    *"$sect"*|\
-    *" $sect")  builtin echo $sect ;;
-  esac
-}
-
-markdown.section.generate-default() {
+doc.generator.generate-sect.default() {
   local sect=$"1"
 
   case ${DEFAULTS[$sect]:-n} in
@@ -295,277 +676,82 @@ markdown.section.generate-default() {
 #               having first extracted the line number - which is always the
 #               first token on the content.
 # ------------------------------------------------------------------------------
-markdown.section.generate() {
-  local sect="${1:?'No sect name'}" content="${CONTENT["$sect"]}"
+doc.generator.generate-sect() {
+  # Get the section name (from the args) and also the current content
+  local sect="${1:?'No sect name'}" content= lineno= no_spaces
 
-  # Extract the line number and remove it from the local copy of the content
-  local lineno="${content%% *}" ; content="${content##$lineno }"
+  case "${!Content[*]}" in
+    "$sect"*|\
+    *"$sect"*|\
+    *"$sect")   # Sect's used, so determine the lineno & content
+                content="${Content["$sect"]:-}"
+                lineno="${content%% *}"
+                content="${content##$lineno }"
+                no_spaces="${content//[[:space:]]}"
+                ;;
+    *)          # Sect not used
+                return
+                ;;
+  esac
 
-  # Update the content - to remove the line number
-  CONTENT["$sect"]="$content"
-
-  case "c${content//[[:space:]]}" in
-    c)  # It's an empty section, so report it iff default content generation
+  case "${#no_spaces}" in
+    0)  # It's an empty section, so report it iff default content generation
         # isn't enabled - start by defining the core message
         local msg ; case ${GEN_DEFAULT_CONTENT:-n} in
           n)  # Empty, default not enabled, so update the warning message
               msg='defaults not enabled'
+
+              # ... and delete the "section
+              unset Content["$sect"]
               ;;
           *)  # Otherwise, generate the default content for the section
               content="${DEFAULTS[${sect:-$sect:-n}]:-"None."}"
               eval content="$content"
 
               # Update the `records'
-              CONTENT[$sect]="$content"
+              #Content[$sect]="$content"
 
               # ... and extend the warning message
               msg='default used'
               ;;
         esac
 
-        parse.report.warn $lineno "Empty section: '$sect'" "$msg"
+        line.parser.warn $lineno "Empty section: '$sect'" "$msg"
         ;;
   esac
 
   case "${#content}" in 0) return ;; esac
 
   case "$sect" in
-   File|Title)  printf "# $content" ;;
-   *)           printf "# $1\n\n$content" ;;
+   File)  printf "# $content" ;;
+   *)     printf "# $1\n\n$content" ;;
   esac
 
-  printf "\n\n---\n\n"
+  # Now the post-section marker (horiz line)
+  printf "\n---\n\n"
 }
 
 # ------------------------------------------------------------------------------
-# Description:
+# Description:  Routine to generate the entirety of the doc.generator.
+# Synopsis:     doc.generator.generate
+# Takes:        None.
+# Return:       
+# Env Vars:     $Content
 # ------------------------------------------------------------------------------
-markdown.generate() {
-  local sect ; for sect in "${SECTIONS[@]}" ; do
-    case ${CONTENT[$sect]:-n} in
-      n)  # The section wasn't detected, so ignore it
-          continue
-          ;;
-    esac
-
-    markdown.section.generate "$sect"
+doc.generator.generate() {
+  : $(declare -p Content)
+  local sect ; for sect in "${Sections[@]}" ; do
+    doc.generator.generate-sect "$sect"
   done
 
-  local mt="${CONTENT[*]}" ; mt="${mt//[[:space:]]}"
+  : ${!Content[@]}
+  local mt="${Content[*]}" ; mt="${mt//[[:space:]]}" ; : ${#mt}
   case "${#mt}" in
     0)  report.warn "Empty markdown"
         return
         ;;
     *)  printf "END OF FILE\n" ;;
   esac
-}
-
-# ------------------------------------------------------------------------------
-# Description:  Helper routine to extract the section title from the section
-#               header line.
-# Synopsis:     parse.section.extract-header [LINE]
-# Args:         $1  - optional line to parse, default - current line.
-# Env Vars:     $CURRENT
-# Returns:      The parsed, but unverified, title on STDOUT
-# ------------------------------------------------------------------------------
-parse.section.extract-header() {
-  local title="${1:-${CURRENT[content]}}"
-  title="${title### }"
-  printf "${title/:*}"
-}
-
-# ------------------------------------------------------------------------------
-# Description:  
-# Env vars:     $PARA
-# ------------------------------------------------------------------------------
-parse.line.blank() {
-  case "${PARA:-n}" in
-    n)  # Empty paragraph, so nothing to do
-        :
-        ;;
-    *)  # Non-empty paragraph, so append it (the paragraph) to the current
-        # section.
-        SECTION[content]+="$PARA"
-        ;;
-  esac
-
-  # Finally, reset the records as appropriate
-  PARA=''
-}
-
-# ------------------------------------------------------------------------------
-# Description:  Routine to close out the currently open section - iff there's
-#               one currently open.
-# Synopsis:     parse.section.close
-# Args:         None.
-# Env Vars:     $CONTENT, $SECTION
-# ------------------------------------------------------------------------------
-parse.section.end() {
-  case ${SECTION[name]:+y} in
-    y)  # Ensure an open paragraph is appended to the section body - by
-        # simulating an end-of-paragraph situation
-        parse.line.blank
-        
-        # Now do the section body itself - note that the section body is
-        # prefixed by the line number on which the header was detected
-        CONTENT[${SECTION[name]}]="${SECTION[lineno]} ${SECTION[content]}"
-        : $(declare -p CONTENT)
-        ;;
-  esac
-
-  SECTION=( [name]= [lineno]= [content]= )
-}
-
-# ------------------------------------------------------------------------------
-# Description:  
-# Env vars:     $PARA, $SECTION, $CONTENT
-# ------------------------------------------------------------------------------
-parse.line.eof() {
-  # Close out the currently open section
-  parse.section.end
-}
-
-# ------------------------------------------------------------------------------
-# Description:  Routine to close out the currently open paragraph - iff there's
-#               one currently open.
-# Env vars:     $SECTION, $PARA 
-# ------------------------------------------------------------------------------
-parse.para.end() {
-  case ${#PARA} in
-    0)  : ;;
-    *)  : ${#SECTION[content]}
-        case ${#SECTION[content]} in
-          0)  SECTION[content]="$PARA" ;;
-          *)  SECTION[content]+="
-
-$PARA" ;;
-        esac
-        ;;
-  esac
-
-  PARA=''
-}
-
-# ------------------------------------------------------------------------------
-# Description:  Routine to process a `plain' i.e. non-list, paragraph line.
-# Env vars:     $CURRENT, $PARA 
-# ------------------------------------------------------------------------------
-parse.line.para-plain() {
-  local content="${CURRENT[content]###*( )}" ; content="${content%%*( )}"
-  
-  case ${#PARA} in
-    0)  PARA="$content" ;;
-    *)  PARA+=" $content" ;;
-  esac
-}
-
-# ------------------------------------------------------------------------------
-# Description:  Dummy handler - provisioned solely to accept `ignored'
-#               lines i.e. prevent them (ignored lines) from terminating the
-#               script.
-# Env vars:     None. 
-# ------------------------------------------------------------------------------
-parse.line.ignore() { : ; }
-
-# ------------------------------------------------------------------------------
-# Description:  
-# Env vars:     $PREVIOUS
-# ------------------------------------------------------------------------------
-parse.state-change() {
-  local new=$1
-
-  # Now act using the validated class - start by determing if it's a change in
-  # state i.e. the "new" class differs from the previous
-  : ${PREVIOUS:-n}
-  case ${PREVIOUS:-n} in
-    n|\
-    $parser)  # 1st time or no change since last time
-              ;;
-    *)        # Changed since last time - determine if there's any associated
-              # action
-              case $PREVIOUS:$new in
-                *:eof|\
-                blank:section-header|\
-                ignore:section-header|\
-                section-header:ignore|\
-                section-header:*proto*) # End of section
-                                        parse.section.end
-                                        ;;
-                para*:blank|\
-                para*:ignore|\
-                para*:*proto*)          # End of paragraph
-                                        parse.para.end
-                                        ;;
-                para-*:para-*)          # End of current list type
-                                        parse.list.end $PREVIOUS
-                                        ;;
-              esac
-              ;;
-  esac
-
-  # Save the current state for next pass
-  PREVIOUS=$new
-}
-
-# ------------------------------------------------------------------------------
-# Description:  
-# Env vars:     $PREVIOUS, $CURRENT, $SECTION, $PARA
-# ------------------------------------------------------------------------------
-parse.dispatcher() {
-  #shopt -ou xtrace
-
-  local class=${1:-${CURRENT[class]}} ; local parser=parse.line.$class
-
-  # Attempt to validate the class
-  case $(type -t $parser) in
-    function) : ;;
-    *)        report.fatal \
-              "Unexpected line class: '${CURRENT[class]}' (no handler - '$parser')\n" \
-              "For line:
-                    ${CURRENT[lineno]:-EOF} - '${CURRENT[content]:-EOF}'"
-              ;;
-  esac
-
-  # Detect & process state change
-  case ${PREVIOUS:-} in $class) : ;; *) parse.state-change $class ;; esac
-
-  eval $SHOPT
-
-  # Finally, dispatch the current line parser
-  eval $parser
-}
-
-# ------------------------------------------------------------------------------
-# Description:  
-# ------------------------------------------------------------------------------
-parse.line.section-header() {
-  # Extract & validate the section header
-  local name="$(parse.section.find-name "$(parse.section.extract-header)")"
-
-  case "${name:-n}" in
-    n)  parse.report.warn "Unrecognised section title: $name"
-        return
-        ;;
-  esac
-
-  # It's a valid header, so remove it, update the classification for the line &
-  # dispatch the appropriate parser for processing
-  # Update the current line by replacing the title prefix with its
-  # equivalent in spaces
-  local spaces="$name:" ; spaces="${spaces//[:A-Za-z]/ }" ; : ${#spaces}
-  CURRENT[content]="${CURRENT[content]//$name:/$spaces}"
-
-  # As it's a new section, initialise the section & paragraph records
-  SECTION=( [name]="$name" [lineno]=${CURRENT[lineno]} [content]= )
-  PARA=""
-
-  : $(declare -p SECTION)
-
-  # Before classifying the updated current line
-  line.classify
-
-  # And finally parsing the result
-  parse.dispatcher
 }
 
 ################################################################################
@@ -605,20 +791,34 @@ done
 shift $((OPTIND - 1))
 
 # Read the given/default file
-read-file "${1:-'-'}"
+file.load "${1:-'-'}"
+
+case $(file.is-empty ; echo $?) in 0) file.report.warn.empty-file ;; esac
 
 eval $SHOPT
 
 # Read & parse the whole file
-while file.read.line ; do
-  parse.dispatcher
+while file.read-line ; do
+  declare lineno=$(file.line.number) content="$(file.line.content)"
+  :
+  : "LINE BEGIN - $lineno: '$content'"
+  :
 
-  case ${CURRENT[class]:-} in eof) break ;; esac
+  : $(declare -p Para)
+
+  line.parser.dispatch "$content"
+
+  : $(declare -p Para)
+
+  :
+  : "LINE END - $lineno: '$content'"
+  :
 done
 
+line.parser.dispatch -h eof
+
 # Before finally generating the/any markdown
-#shopt -ou xtrace
-markdown.generate
+doc.generator.generate
 
 exit $?
 
