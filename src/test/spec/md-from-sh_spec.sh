@@ -1,6 +1,6 @@
 # vim: ai et fo+=rt sts=2  sw=2 tw=80
 ################################################################################
-OUT=src/main/bin/generate-md.sh
+OUT=src/main/bin/md-from-sh.sh
 EXAMPLES_DIR=${SHELLSPEC_SPECFILE%/*}/examples
 FILE_DIR="$EXAMPLES_DIR/file"
 LISTS_DIR="$EXAMPLES_DIR/lists"
