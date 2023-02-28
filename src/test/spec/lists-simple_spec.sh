@@ -3,14 +3,14 @@
 
 specfile-setup
 
-Describe "$OUT - lists - simple"
+Describe "$OUT - lists - simple ($SHELLSPEC_SPECFILE)"
   Parameters:matrix
     # List type
     bullet numbered var
     # List spec `type'
     explicit implicit
     # List nesting
-    linear nested
+    simple nested
   End
 
   Example "G-P: $1-$2-$3"
