@@ -12,7 +12,6 @@
 declare \
   Shopt='set +o xtrace' \
   Shopt_reset="$(shopt -po xtrace)"
-shopt -uo xtrace
 
 #case ${XTRACE:-n} in
 #  *${BASH_SOURCE##*/}*) Shopt='set -o xtrace' ;;
@@ -115,7 +114,7 @@ file.load() {
   mapfile -t File < "$Fname" || exit 1
 
   : STATE-FILE READ - ${#File[@]} lines from $Fname -
-  : $(declare l ; for l in "${File[@]}" ; do printf "$l\n" ; done)
+  : $(declare l ; for l in "${File[@]}" ; do printf "%s\n" "$l" ; done)
 
   eval ${Shopt_reset:-}
 }
@@ -173,7 +172,7 @@ file.line.number() {
 file.line.content() {
   eval ${Shopt:-}
 
-  printf "${Line:-}"
+  printf "%s" "${Line:-}"
 
   eval ${Shopt_reset:-}
 }
