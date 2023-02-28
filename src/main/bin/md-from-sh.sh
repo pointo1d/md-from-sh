@@ -2,13 +2,14 @@
 # vim: ai et fo+=rt sts=2 sw=2 tw=80
 ################################################################################
 # File:         md-from-sh.sh
-# Synopsis:     md-from-sh [-d] [-l] [-w] Fname
+# Synopsis:     md-from-sh [-d] [-l] [-w] [-R | Fname]
 # Description:  Pure bash script to generate markdown from pre-defined,
 #               well-formed comments.
 # Opts:         -d  - enable default content for section(s) (as appropriate).
 #               -l  - list the configured section titles c/w the ordering in
 #                     which they appear in the output.
 #               -w  - enable warnings.
+#               -R  - generate own README.
 #               -W  - enable fatal warnings (implies '-w').
 # Args:         Fname - the name of the input file
 # Returns:      - 0 - iff no problems
@@ -50,6 +51,7 @@
 #                     - Enumerated.
 #                     - Variables.
 #               - CLI options
+#                 - Generate own README i.e. README for this script.
 #                 - Content generation
 #                   - Default section.
 #                   - ToC section.
@@ -60,6 +62,11 @@
 #                 - Output filename, default - ${infile/.sh/.md}.
 #               - Removal of the lookahead requirement renders the file
 #                 "module" redundant - remove it.
+#               - Addition of comment comments ;-).
+#               - Tests
+#                 - Better faacilitate modular testing
+#                   - Disparate contents, lists etc. specific scripts.
+#                   - Helpers e.g. src/tgt file name determination.
 # Notes:
 # - Owing to shell options employed internally, the following command s/b used
 #   when syntax checking this and subordinate scripts:
@@ -96,7 +103,7 @@ declare SHOPT="$(shopt -op xtrace)"
 shopt -ou xtrace
 
 declare \
-  Fname GenDefaultContent FatalWarnings \
+  Fname GenDefaultContent Warnings FatalWarnings OwnREADME \
   Sections=() Indents=() HdrContentOrder=(
     'Synopsis' 'Description' 'Where' 'Opts' 'Args' 'Returns' 'Env Vars' 'Notes'
   ) \
@@ -176,9 +183,15 @@ report.fatal() {
 # Args:         STR - the string to report on STDERR
 # ------------------------------------------------------------------------------
 report.warn() {
-  case ${FatalWarnings:-n} in
-    n)  report._2-stderr "WARNING - $*" ;;
-    *)  report.fatal 2 "$* (fatal warning enabled)" ;;
+  report._2-stderr "WARNING - $*"
+
+  return
+
+  : ${Warnings:-n}:${FatalWarnings:-n}
+  case ${Warnings:-n}:${FatalWarnings:-n} in
+    n:n)  return ;;
+    *:n)  report._2-stderr "WARNING - $*" ;;
+    *)    report.fatal 2 "$* (fatal warnings enabled)" ;;
   esac
 }
 
@@ -812,7 +825,7 @@ doc.generator.generate() {
 ################################################################################
 
 declare OPTARG OPTIND opt
-while getopts 'dlw' opt ; do
+while getopts 'dlwW' opt ; do
   case $opt in
     d)  #H# Enable default content, default - disabled
         GenDefaultContent=t
@@ -831,7 +844,13 @@ Note that aliases/alternatives are indicated using the pipe ('|') symbol
 
         exit 0
         ;;
-    w)  #H# Enable fatal warnings, default - disabled
+    w)  #H# Enable warnings, default - disabled
+        Warnings=t
+        ;;
+    R)  #H# Generate README for this file
+        OwnREADME=t
+        ;;
+    W)  #H# Enable fatal warnings (implies '-w'), default - disabled
         FatalWarnings=t
         ;;
   esac
@@ -839,8 +858,13 @@ done
 
 shift $((OPTIND - 1))
 
+declare Fname ; case "${OwnREADME:-n}" in
+  n)  Fname="${1:-'-'}" ;;
+  *)  Fname=$0 ;;
+esac
+
 # Read the given/default file
-file.load "${1:-'-'}"
+file.load "$Fname"
 
 case $(file.is-empty ; echo $?) in 0) file.report.warn.empty-file ;; esac
 
