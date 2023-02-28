@@ -1,27 +1,69 @@
 #!/usr/bin/env bash
 # vim: ai et fo+=rt sts=2 sw=2 tw=80
 ################################################################################
-# Description:
-# Files:        None - atm.
+# File:         md-from-sh.sh
+# Synopsis:     md-from-sh [-d] [-l] [-w] Fname
+# Description:  Pure bash script to generate markdown from pre-defined,
+#               well-formed comments.
+# Opts:         -d  - enable default content for section(s) (as appropriate).
+#               -l  - list the configured section titles c/w the ordering in
+#                     which they appear in the output.
+#               -w  - enable warnings.
+#               -W  - enable fatal warnings (implies '-w').
+# Args:         Fname - the name of the input file
 # Returns:      - 0 - iff no problems
 #               - 1 - 
-#               - 2 - warning encountered whilst fatal warning enabled ('-w')
-# To Do:        - Optional default content generation.
-#               - Missing section(s) reporting.
-#               - Implement fatal/non-fatal warning functionality
-#               - List processing - both explicit & implicit.
-#               - Facilitate near-BNF spec for content definitions (& ordering).
-#               - Optional ToC generation.
-#               - Auto-indented lists.
-#               - Configurable sections.
-#               - Configurable defaults (for empty sections).
-#               - Split out content related definitions to separate file(s).
-#               - Parse opts and args from code i.e. auto-synopsis generation.
-#               - Implemnt alternative synopsis entries.
-#               - Implement default content generation (c/w merely reporting)
-#               - Replace in-line stack functions with library
-#               - Add in capability to comment out doc lines.
+#               - 2 - warning encountered whilst fatal warnings enabled ('-w')
+# Files:        None - atm.
+# To Do:        - Sections
+#                 - ~Core defaults.~
+#                 - Synopsis - alternative entries.
+#                 - Functions
+#                   - Selectable
+#                     - None (default).
+#                     - Public.
+#                     - All i.e. (public & private).
+#                 - Configurable sections
+#                   - Defaults
+#                     - Content.
+#                     - Mandatory sections.
+#                   - Ordering.
+#                   - Near-BNF spec for the above (section titles & ordering).
+#               - Content warnings
+#                 - Missing/empty section(s)
+#                   - Main body.
+#                   - Functions.
+#                 - Missing shebang.
+#               - Lists
+#                 - Simple
+#                   - Linear
+#                     - ~Bulleted.~
+#                     - Enumerated.
+#                     - Variables.
+#                   - Nested
+#                     - Bulleted.
+#                     - Enumerated.
+#                     - Variables.
+#                 - Composite.
+#                   - Nested
+#                     - Bulleted.
+#                     - Enumerated.
+#                     - Variables.
+#               - CLI options
+#                 - Content generation
+#                   - Default section.
+#                   - ToC section.
+#                   - Synopsis.
+#                 - Warnings
+#                   - Enable.
+#                   - Fatal.
+#                 - Output filename, default - ${infile/.sh/.md}.
+#               - Removal of the lookahead requirement renders the file
+#                 "module" redundant - remove it.
 # Notes:
+# - Owing to shell options employed internally, the following command s/b used
+#   when syntax checking this and subordinate scripts:
+#   ```bash -nO extglob SCRIPT```
 # - Wheresoever appropriate, sections are normalized to match /[:digit:]+: .*/
 # - For the purposes of this exercise i.e. doc.generator.generate, there are 2
 # _types_ of lists:
@@ -49,13 +91,13 @@
 # Date:         Sept 2022
 ################################################################################
 shopt -s extglob
-shopt -os errexit xtrace
+#shopt -os errexit xtrace
 declare SHOPT="$(shopt -op xtrace)"
 shopt -ou xtrace
 
 declare \
-  FNAME GEN_DEFAULT_CONTENT FATAL_WARNINGS \
-  FILE=() Sections=() INDENTS=() HdrContentOrder=(
+  Fname GenDefaultContent FatalWarnings \
+  Sections=() Indents=() HdrContentOrder=(
     'Synopsis' 'Description' 'Where' 'Opts' 'Args' 'Returns' 'Env Vars' 'Notes'
   ) \
   FuncHdrOrder=( 'Function' "${HdrContentOrder[@]}" ) \
@@ -64,11 +106,12 @@ declare \
     'To Do' 'Author' 'Date' 'Copyright' 'License'
   )
 
-  declare -A Content=() LINE=() BLOCK=() Para=( [type]= [content]= ) \
-    Sect=( [title]= [lineno]= [content]= ) DEFAULTS=( 
-      ['File']='${FNAME##*/}'
-      ['Title']='${FNAME##*/}'
-      ['Synopsis']='\`\`\`${FNAME##*/}\`\`\`'
+  declare -A Content=() Para=( [type]= [content]= ) \
+    Sect=( [title]= [lineno]= [content]= ) \
+    SectDefaults=( 
+      ['File']='${Fname##*/}'
+      ['Title']='${Fname##*/}'
+      ['Synopsis']='\`\`\`${Fname##*/}\`\`\`'
       ['Author']='${LOGNAME:-${USERNAME:?"No user name"}}'
       ['Date']='$(date +"%A %b %d %Y")'
     )
@@ -133,7 +176,7 @@ report.fatal() {
 # Args:         STR - the string to report on STDERR
 # ------------------------------------------------------------------------------
 report.warn() {
-  case ${FATAL_WARNINGS:-n} in
+  case ${FatalWarnings:-n} in
     n)  report._2-stderr "WARNING - $*" ;;
     *)  report.fatal 2 "$* (fatal warning enabled)" ;;
   esac
@@ -170,7 +213,7 @@ line.parser.warn() {
 # ------------------------------------------------------------------------------
 # Description:  Routine to determine, validate and dispatch the appropriate
 #               handler for the current line.
-# Env vars:     $LINE
+# Env Vars:     
 # ------------------------------------------------------------------------------
 line.parser.get-type() {
   local shopt="$(shopt -po xtrace)"
@@ -193,8 +236,12 @@ line.parser.get-type() {
     '# '+(#))   ret=ignore ;;
     '#'+( ))    ret=para-blank ;;
     _*'()'*|\
-    *._*'()'*)  ret=func-defn-prv ;;
-    *'()'*)     ret=func-defn-pub ;;
+    *._*'()'*)  ret=func-defn-prv
+                ret=ignore
+                ;;
+    *'()'*)     ret=func-defn-pub
+                ret=ignore
+                ;;
     *)          content="${content### }"
                 case "${content## }" in
                   [A-Z]+([- A-Za-z]):*) ret=sect-header ;;
@@ -218,7 +265,7 @@ line.parser.get-type() {
 # ------------------------------------------------------------------------------
 # Description:  Routine to determine, validate and dispatch the appropriate
 #               handler for the current line.
-# Env vars:     $LINE
+# Env Vars:     
 # ------------------------------------------------------------------------------
 line.parser.dispatch.dispatch-it() {
 #  set +o xtrace
@@ -253,13 +300,13 @@ line.parser.sect-header() {
 # ------------------------------------------------------------------------------
 # Description:  Routine to determine, validate and dispatch the appropriate
 #               handler for the current line.
-# Env vars:     $LINE
+# Env Vars:     
 # ------------------------------------------------------------------------------
 line.parser.dispatch() {
   # ----------------------------------------------------------------------------
   # Description:  Local routine to determine, validate, report and dispatch the
   #               appropriate handler for the current line.
-  # Env vars:     $LINE
+  # Env Vars:     
   # ----------------------------------------------------------------------------
   dispatch-it() {
     set +o xtrace
@@ -324,7 +371,7 @@ line.parser.dispatch() {
 # ------------------------------------------------------------------------------
 # Description:  Routine to close out the currently open paragraph - iff theres
 #               one currently open.
-# Env vars:     $Sect, $Para 
+# Env Vars:     $Sect, $Para 
 # ------------------------------------------------------------------------------
 doc.builder.para.end() {
   # End the current paragraph with the obligatory newline ... iff there's alread
@@ -338,7 +385,7 @@ doc.builder.para.end() {
   : $(declare -p Sect)
   
   # Reset the indent record
-  INDENTS=()
+  Indents=()
 
   # Finally, reset the paragraph accumulator
   Para=( [content]= [type]= )
@@ -348,7 +395,7 @@ doc.builder.para.end() {
 # Description:  Dummy handler - provisioned solely to accept ignored
 #               lines i.e. prevent them (ignored lines) from terminating the
 #               script.
-# Env vars:     None. 
+# Env Vars:     None. 
 # ------------------------------------------------------------------------------
 doc.builder.para.append() {
   local OPTARG OPTIND opt no_prepend
@@ -428,7 +475,7 @@ doc.builder.sect.end() {
 # ------------------------------------------------------------------------------
 # Description:  Routine to close out the currently open paragraph - iff theres
 #               one currently open.
-# Env vars:     $Sect, $Para 
+# Env Vars:     $Sect, $Para 
 # ------------------------------------------------------------------------------
 doc.builder.sect.append() {
   local content="${1:-}" no_spaces="${1//[[:space:]]/}"
@@ -444,7 +491,7 @@ doc.builder.sect.append() {
 # ------------------------------------------------------------------------------
 # Description:  Routine to close out the currently open paragraph - iff theres
 #               one currently open.
-# Env vars:     $Sect, $Para 
+# Env Vars:     $Sect, $Para 
 # ------------------------------------------------------------------------------
 doc.builder.block.end() {
   line.parser.dispatch -h doc.builder.sect.end
@@ -453,7 +500,7 @@ doc.builder.block.end() {
 # ------------------------------------------------------------------------------
 # Description:  Routine to close out the currently open paragraph - iff theres
 #               one currently open.
-# Env vars:     $Sect, $Para 
+# Env Vars:     $Sect, $Para 
 # ------------------------------------------------------------------------------
 doc.builder.block.append() {
   line.parser.dispatch -h line.parser.sect-append
@@ -461,7 +508,7 @@ doc.builder.block.append() {
 
 # ------------------------------------------------------------------------------
 # Description:  
-# Env vars:     $Para, $Sect, $Content
+# Env Vars:     $Para, $Sect, $Content
 # ------------------------------------------------------------------------------
 line.parser.eof() {
   # Close out the currently open block (if any)
@@ -470,7 +517,7 @@ line.parser.eof() {
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a plain i.e. non-list, paragraph line.
-# Env vars:     $LINE, $Para 
+# Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.list-entry.continue() {
   line.parser.dispatch -h line.parser.para-plain
@@ -478,40 +525,40 @@ line.parser.list-entry.continue() {
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a list paragraph entry
-# Env vars:     $LINE, $Para 
+# Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.list-entry() {
   # Determine the indent level of the current line
   local indent="${1##+( )}" ; indent=$((${#1} - ${#indent}))
 
   # Now determine if it's at variance to the indent level of the current list
-  case ${#INDENTS[@]} in
+  case ${#Indents[@]} in
     0)  # There's no list as yet,so start it
-        INDENTS=( $indent )
+        Indents=( $indent )
         ;;
     *)  # There is a list, so now determine if the current entry indentation is
         # the same as/different to the existing list
-        case $((${INDENTS[0]} - indent)) in
+        case $((${Indents[0]} - indent)) in
           0)  # Continuation of the existing list i.e. no change
               :
               ;;
           -*) # New nested list, so push it onto the indent record
-              INDENTS=( $indent ${INDENTS[@]} )
+              Indents=( $indent ${Indents[@]} )
               ;;
           *)  # Reversion ... to a previous level, so attempt to find it in the
               # previous levels
-              case "${INDENTS[@]}" in
+              case "${Indents[@]}" in
                 *" $indent"|\
                 *" $indent "*)  # It's on there, so now clear the indent stack
                                 # down to the current level
                                 local i
-                                for ((i ; i < ${#INDENTS[@]} ; i++)); do
-                                  case ${INDENTS[$i]} in
+                                for ((i ; i < ${#Indents[@]} ; i++)); do
+                                  case ${Indents[$i]} in
                                     $indent)  # Found it
                                               break
                                               ;;
                                     *)        # Not found, so remove it
-                                              INDENTS=( ${INDENTS[@]:1} )
+                                              Indents=( ${Indents[@]:1} )
                                               ;;
                                   esac
                                 done
@@ -533,11 +580,11 @@ line.parser.list-entry() {
         ;;
   esac
 
-  : ${#INDENTS[@]}
-  local indent ; case ${#INDENTS[@]} in
+  : ${#Indents[@]}
+  local indent ; case ${#Indents[@]} in
     1)  indent='' ;;
-    *)  : ${#INDENTS[@]}, $(( ${#INDENTS[@]} * 2))
-        indent="$(printf "%*.0s" $(( ${#INDENTS[@]} * 2)))"
+    *)  : ${#Indents[@]}, $(( ${#Indents[@]} * 2))
+        indent="$(printf "%*.0s" $(( ${#Indents[@]} * 2)))"
         ;;
   esac
 
@@ -554,7 +601,7 @@ line.parser.list-entry() {
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a plain i.e. non-list, paragraph line.
-# Env vars:     $LINE, $Para 
+# Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-blank() {
   : $(declare -p Sect)
@@ -570,7 +617,7 @@ line.parser.para-blank() {
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a plain i.e. non-list, paragraph line.
-# Env vars:     $LINE, $Para 
+# Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-append() {
   : "'${1:-}'"
@@ -588,7 +635,7 @@ line.parser.para-append() {
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a bullet list paragraph entry
-# Env vars:     $LINE, $Para 
+# Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-list-entry-bullet() {
   local content="$1" ; content="${content%%*( )}"
@@ -600,7 +647,7 @@ line.parser.para-list-entry-bullet-append() { line.parser.append -n "$1" ; }
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a bullet list paragraph entry
-# Env vars:     $LINE, $Para 
+# Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-list-entry-enum-alt() {
   local content="$1" ; content="${content%%*( )}"
@@ -613,7 +660,7 @@ line.parser.para-list-entry-enum-alt() { line.parser.append -n "$1" ; }
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a bullet list paragraph entry
-# Env vars:     $LINE, $Para 
+# Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-list-entry-enum() {
   local content="$1" ; content="${content%%*( )}"
@@ -626,7 +673,7 @@ line.parser.para-list-entry-enum() { line.parser.append -n "$1" ; }
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a bullet list paragraph entry
-# Env vars:     $LINE, $Para 
+# Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-list-entry-var() {
   local content="$1" ; content="${content%%*( )}"
@@ -640,7 +687,7 @@ line.parser.para-list-entry-var() { line.parser.append -n "$1" ; }
 # Description:  Dummy handler - provisioned solely to accept ignored
 #               lines i.e. prevent them (ignored lines) from terminating the
 #               script.
-# Env vars:     None. 
+# Env Vars:     None. 
 # ------------------------------------------------------------------------------
 line.parser.ignore() {
   # Line is to be ignored, but close out any open section
@@ -665,7 +712,7 @@ line.parser.ignore() {
 doc.generator.generate-sect.default() {
   local sect=$"1"
 
-  case ${DEFAULTS[$sect]:-n} in
+  case ${SectDefaults[$sect]:-n} in
     n)  printf "# $sect\n\nNone." ;;
     *)  eval printf "# $sect\n\n$content" ;;
   esac
@@ -694,10 +741,11 @@ doc.generator.generate-sect() {
                 ;;
   esac
 
+  : "${#no_spaces}"
   case "${#no_spaces}" in
     0)  # It's an empty section, so report it iff default content generation
         # isn't enabled - start by defining the core message
-        local msg ; case ${GEN_DEFAULT_CONTENT:-n} in
+        local msg ; case ${GenDefaultContent:-n} in
           n)  # Empty, default not enabled, so update the warning message
               msg='defaults not enabled'
 
@@ -705,7 +753,7 @@ doc.generator.generate-sect() {
               unset Content["$sect"]
               ;;
           *)  # Otherwise, generate the default content for the section
-              content="${DEFAULTS[${sect:-$sect:-n}]:-"None."}"
+              content="${SectDefaults[${sect:-$sect:-n}]:-"None."}"
               eval content="$content"
 
               # Update the `records'
@@ -734,7 +782,8 @@ doc.generator.generate-sect() {
 # ------------------------------------------------------------------------------
 # Description:  Routine to generate the entirety of the doc.generator.
 # Synopsis:     doc.generator.generate
-# Takes:        None.
+# Opts:        None.
+# Args:
 # Return:       
 # Env Vars:     $Content
 # ------------------------------------------------------------------------------
@@ -766,7 +815,7 @@ declare OPTARG OPTIND opt
 while getopts 'dlw' opt ; do
   case $opt in
     d)  #H# Enable default content, default - disabled
-        GEN_DEFAULT_CONTENT=t
+        GenDefaultContent=t
         ;;
     l)  #H# List configured section names/titles
         report.info "\
@@ -783,7 +832,7 @@ Note that aliases/alternatives are indicated using the pipe ('|') symbol
         exit 0
         ;;
     w)  #H# Enable fatal warnings, default - disabled
-        FATAL_WARNINGS=t
+        FatalWarnings=t
         ;;
   esac
 done
