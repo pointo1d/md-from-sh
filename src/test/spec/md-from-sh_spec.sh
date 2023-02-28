@@ -43,16 +43,14 @@ Describe "$OUT - file not found"
     End
 End
 
-Describe "$OUT - empty behaviours"
+Describe "$OUT - empty i.e. default/non-default, behaviours"
   Parameters:matrix
     # scope (number of sections)
-#single
+#none
     none single multi all
     # Type of section entry
-#empty
     empty blank multi
-    #  default enabled setting
-#no-default
+    #  default content generation mode
     no-default default
   End
 
@@ -94,7 +92,7 @@ Describe "$OUT - empty behaviours"
     test $3 = default && opts=d
 
     Skip if "Invalid empty file combination" test $1 = none -a $2 = 'blank'
-    #Skip if "Default content generation NYI" test $1 = none -a $3 = 'default'
+    Skip if "Default content generation NYI" test $1 = none -a $3 = 'default'
     Skip if "Default content generation NYI" test $3 = 'default'
     Skip if "No source ('$sh')" test ! "${sh:-}"
     Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"
@@ -139,17 +137,18 @@ Describe "$OUT - line behaviours"
   End
 End
 
+Describe "$OUT - simple & nested list behaviours"
+End
+
+
 Describe "$OUT - lists"
   Parameters:matrix
     # List type
-#    bullet numbered var mixed
-bullet
+    bullet numbered var mixed
     # List spec `type'
-#   explicit implicit
-explicit
+    explicit implicit
     # List nesting
-#    linear nested
-linear
+    linear nested
   End
 
   Example "G-P: $1-$2-$3"
@@ -190,7 +189,10 @@ linear
     done
 
     Skip if "Implicit bullet lists not supported!!" test $1$2 = bulletimplicit
-    Skip if "Nested lists not yet implemented!!" test $3 = nested
+    Skip if "Numbered lists NYI!!" test $1 = numbered
+    Skip if "Var lists NYI!!" test $1 = var
+    Skip if "Mixed lists NYI!!" test $1 = mixed
+    Skip if "Nested lists NYI!!" test $3 = nested
     Skip if "No source ('${sh:-}')" test ! "${sh:-}"
     Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"
 
@@ -198,6 +200,10 @@ linear
     The stdout should equal "$(<$md)"
   End
 End
+
+Describe "$OUT - composite list behaviours"
+End
+
 
 #Describe "$OUT - Explicit lists"
 #  Parameters:matrix
