@@ -60,8 +60,8 @@
 #                   - Enable.
 #                   - Fatal.
 #                 - Output filename, default - ${infile/.sh/.md}.
-#               - Removal of the lookahead requirement renders the file
-#                 "module" redundant - remove it.
+#               - ~Removal of the lookahead requirement renders the file
+#                 "module" redundant - remove it.~
 #               - Addition of comment comments ;-).
 #               - Tests
 #                 - Better faacilitate modular testing
@@ -100,10 +100,10 @@
 shopt -s extglob
 #shopt -os errexit xtrace
 declare SHOPT="$(shopt -op xtrace)"
-shopt -ou xtrace
+#shopt -ou xtrace
 
 declare \
-  Fname GenDefaultContent Warnings FatalWarnings OwnREADME \
+  Fname LineNo LineContent GenDefaultContent Warnings FatalWarnings OwnREADME \
   Sections=() Indents=() HdrContentOrder=(
     'Synopsis' 'Description' 'Where' 'Opts' 'Args' 'Returns' 'Env Vars' 'Notes'
   ) \
@@ -213,7 +213,7 @@ line.parser.warn() {
   report.warn "$1 - line $lineno ${2:+($2)}"
 }
 
-. ${BASH_SOURCE%%/bin/*}/lib/file.sh
+#. ${BASH_SOURCE%%/bin/*}/lib/file.sh
 
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
@@ -230,7 +230,7 @@ line.parser.warn() {
 # ------------------------------------------------------------------------------
 line.parser.get-type() {
   local shopt="$(shopt -po xtrace)"
-  set +o xtrace
+#  set +o xtrace
 
   local OPTARG OPTIND opt content="$@" no_prefix ret
   while getopts 'n' opt ; do
@@ -292,8 +292,8 @@ line.parser.dispatch.dispatch-it() {
 
   case "n$(type -t $handler)" in
     n)  report.fatal \
-          "Line handler not found: '$handler' - line $(file.line.number)::\n" \
-          "  '$(file.line.content)'"
+          "Line handler not found: '$handler' - line $LineNo::\n" \
+          "  '$LineContent)'"
         ;;
   esac
 
@@ -333,8 +333,8 @@ line.parser.dispatch() {
 
     case "n$(type -t $handler)" in
       n)  report.fatal \
-            "Handler not found: '$handler' - line $(file.line.number)::\n" \
-            "  '$(file.line.content)'"
+            "Handler not found: '$handler' - line $LineNo::\n" \
+            "  '$LineContent)'"
           ;;
     esac
 
@@ -344,7 +344,7 @@ line.parser.dispatch() {
     $handler "$@"
   }
 
-  set +o xtrace
+#  set +o xtrace
 
   local OPTARG OPTIND opt handler
   while getopts 'h:' opt ; do
@@ -449,7 +449,7 @@ doc.builder.sect.begin() {
   esac
 
   # As it's a new section, initialise the section & paragraph records
-  Sect=( [title]="$title" [lineno]=$(file.line.number) [content]= )
+  Sect=( [title]="$title" [lineno]=$LineNo [content]= )
 
   # Process the remaining line with the title replaced with it's equiv in
   # spaces
@@ -863,30 +863,27 @@ declare Fname ; case "${OwnREADME:-n}" in
   *)  Fname=$0 ;;
 esac
 
-# Read the given/default file
-file.load "$Fname"
-
-case $(file.is-empty ; echo $?) in 0) file.report.warn.empty-file ;; esac
-
 eval $SHOPT
 
 # Read & parse the whole file
-while file.read-line ; do
-  declare lineno=$(file.line.number) content="$(file.line.content)"
+while read ; do
+  LineNo="${REPLY%%	*}" ; LineNo=${LineNo##+( )}
+  LineContent="${REPLY##*$LineNo	}"
+
   :
-  : "LINE BEGIN - $lineno: '$content'"
+  : "LINE BEGIN - $LineNo: '$LineContent'"
   :
 
   : $(declare -p Para)
 
-  line.parser.dispatch "$content"
+  line.parser.dispatch "$LineContent"
 
   : $(declare -p Para)
 
   :
-  : "LINE END - $lineno: '$content'"
+  : "LINE END - $LineNo: '$LineContent'"
   :
-done
+done < <(cat -n "$Fname")
 
 line.parser.dispatch -h eof
 
