@@ -1,8 +1,13 @@
 # vim: ai et fo+=rt sts=2  sw=2 tw=80
 ################################################################################
-OUT=src/main/lib/file.sh
 
-Describe "$OUT"
+# Load the standrda setup
+specfile-setup
+
+# Override the default OUT definition to this library
+OUT=${SHELLSPEC_SPECDIR%/src/*}/src/main/lib/file.sh
+
+Describe "$OUT - ($SHELLSPEC_SPECFILE)"
   Describe "file not found"
     It "O-N: is fatal"
       FileName=$SHELLSPEC_TMPDIR/$RANDOM
