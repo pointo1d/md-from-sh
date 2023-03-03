@@ -6,7 +6,7 @@ specfile-setup
 Describe "$OUT - lists - simple ($SHELLSPEC_SPECFILE)"
   Parameters:matrix
     # List type
-    bullet numbered var
+    bullet enum var
     # List spec `type'
     explicit implicit
     # List nesting
@@ -27,8 +27,7 @@ Describe "$OUT - lists - simple ($SHELLSPEC_SPECFILE)"
     done
 
     Skip if "Implicit bullet lists not supported!!" test $1$2 = bulletimplicit
-    Skip if "Numbered lists NYI!!" test $1 = numbered
-    Skip if "Var lists NYI!!" test $1 = var
+#    Skip if "Var lists NYI!!" test $1 = var
     Skip if "Nested lists NYI!!" test $3 = nested
     Skip if "No source ('${sh:-}')" test ! "${sh:-}"
     Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"

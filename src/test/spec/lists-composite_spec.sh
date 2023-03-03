@@ -3,10 +3,7 @@
 
 specfile-setup
 
-Describe "$OUT - simple & nested list behaviours"
-End
-
-Describe "$OUT - lists - composite"
+Describe "$OUT - lists - composite behaviours ($SHELLSPEC_SPECFILE)"
   Parameters:matrix
     # List type
     bullet numbered var mixed
@@ -40,9 +37,6 @@ Describe "$OUT - lists - composite"
     When run script $OUT ${sh:-}
     The stdout should equal "$(<$md)"
   End
-End
-
-Describe "$OUT - composite list behaviours"
 End
 
 ###### END OF FILE

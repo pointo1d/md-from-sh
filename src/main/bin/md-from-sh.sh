@@ -100,7 +100,7 @@
 shopt -s extglob
 #shopt -os errexit xtrace
 declare SHOPT="$(shopt -op xtrace)"
-#shopt -ou xtrace
+shopt -ou xtrace
 
 declare \
   Fname LineNo LineContent GenDefaultContent Warnings FatalWarnings OwnREADME \
@@ -210,10 +210,8 @@ line.parser.warn() {
               ;;
   esac
 
-  report.warn "$1 - line $lineno ${2:+($2)}"
+  report.warn "$1 - line $lineno${2:+" ($2)"}"
 }
-
-#. ${BASH_SOURCE%%/bin/*}/lib/file.sh
 
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
@@ -231,15 +229,7 @@ line.parser.warn() {
 line.parser.get-type() {
   local shopt="$(shopt -po xtrace)"
 #  set +o xtrace
-
-  local OPTARG OPTIND opt content="$@" no_prefix ret
-  while getopts 'n' opt ; do
-    case $opt in
-      n)  no_prefix=t ;;
-    esac
-  done
-
-  shift $((OPTIND - 1))
+  local content="$1"
 
   case "$content" in
     '#'|\
@@ -258,8 +248,9 @@ line.parser.get-type() {
     *)          content="${content### }"
                 case "${content## }" in
                   [A-Z]+([- A-Za-z]):*) ret=sect-header ;;
-                  *( )-*)               ret=para-list-entry-bullet ;;
-                  *( )+([0-9).*)        ret=para-list-entry-enum ;;
+                  *( )-*|\
+                  *( )\$*|\
+                  *( )+([0-9]).*)       ret=list-entry ;;
                   *)                    : ${Sect[title]:-n}
                                         case ${Sect[title]:-n} in
                                           n)  ret=ignore ;;
@@ -280,31 +271,8 @@ line.parser.get-type() {
 #               handler for the current line.
 # Env Vars:     
 # ------------------------------------------------------------------------------
-line.parser.dispatch.dispatch-it() {
-#  set +o xtrace
-  
-  local handler=$1 ; shift
-
-  case "${handler:=$(line.parser.get-type "$@")}" in
-    *.*)  : ;;
-    *)    handler=line.parser.$handler ;;
-  esac
-
-  case "n$(type -t $handler)" in
-    n)  report.fatal \
-          "Line handler not found: '$handler' - line $LineNo::\n" \
-          "  '$LineContent)'"
-        ;;
-  esac
-
-  eval $SHOPT
-
-  : DISPATCHING $handler "$@"
-  $handler "$@"
-}
-
 line.parser.sect-header() {
-  local line="${1%%*( )}"
+  local line="${1### }"
 
   line.parser.dispatch -h doc.builder.sect.end
   line.parser.dispatch -h doc.builder.sect.begin "$line"
@@ -355,18 +323,22 @@ line.parser.dispatch() {
 
   shift $((OPTIND - 1))
 
-  local line="${1:-}" ; line="${line### }"
+  local args ; case $# in
+    0)  args="${LineContent:-}" ;;
+    *)  args="$@" ;;
+  esac
 
-  : ${handler:=$(line.parser.get-type "$@")}
+  : ${handler:=$(line.parser.get-type "$args")}
+  args="${args### }"
 
   case ${handler##line.parser.} in
-    sect-header)    dispatch-it $handler "${line%%*( )}" ;;
+    sect-header)    dispatch-it $handler "${args%%*( )}" ;;
     func-defn-prv)  dispatch-it doc.builder.block.abort ;;
     func-defn-pub)  dispatch-it doc.builder.block.end ;;
     para-blank)     dispatch-it doc.builder.para.end
                     dispatch-it line.parser.$handler
                     ;;
-    *)              dispatch-it $handler "${line%%*( )}"
+    *)              dispatch-it $handler "${args%%*( )}"
                     ;;
   esac
 
@@ -443,7 +415,7 @@ doc.builder.sect.begin() {
   esac
 
   case "${name:-n}" in
-    n)  line.parser.warn "Unrecognised section title: $title"
+    n)  line.parser.warn $LineNo "Unrecognised section title: $title"
         return
         ;;
   esac
@@ -541,16 +513,29 @@ line.parser.list-entry.continue() {
 # Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.list-entry() {
+  # Get the entry and also its 'type'
+  local content="$1" no_leading="${1##+( )}" type leader
+  case "$no_leading" in
+      -*)         type=bullet ;;
+      +([0-9]).*) type=enum
+                  content="${content/+([0-9])./1.}"
+                  ;;
+      \$*)        type=var ;;
+      *)          line.parser.warn \
+                    $LineNo "Unknown list entry type" "$LineContent"
+                  ;;
+  esac
+
   # Determine the indent level of the current line
-  local indent="${1##+( )}" ; indent=$((${#1} - ${#indent}))
+  local indent="${1%%[^ ]*}" ; indent=${#indent}
 
   # Now determine if it's at variance to the indent level of the current list
   case ${#Indents[@]} in
     0)  # There's no list as yet,so start it
         Indents=( $indent )
         ;;
-    *)  # There is a list, so now determine if the current entry indentation is
-        # the same as/different to the existing list
+    *)  # There is a list, so does the current indentation differ from the
+        # existing list
         case $((${Indents[0]} - indent)) in
           0)  # Continuation of the existing list i.e. no change
               :
@@ -558,7 +543,7 @@ line.parser.list-entry() {
           -*) # New nested list, so push it onto the indent record
               Indents=( $indent ${Indents[@]} )
               ;;
-          *)  # Reversion ... to a previous level, so attempt to find it in the
+          *)  # Reversion (to previous level), so attempt to find it in the
               # previous levels
               case "${Indents[@]}" in
                 *" $indent"|\
@@ -601,7 +586,7 @@ line.parser.list-entry() {
         ;;
   esac
 
-  doc.builder.para.append -n -- "${indent:-}${1##+( )}"
+  doc.builder.para.append -n -- "${indent:-}${content##+( )}"
 }
 
 # ------------------------------------------------------------------------------
@@ -617,13 +602,6 @@ line.parser.list-entry() {
 # Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-blank() {
-  : $(declare -p Sect)
-#  case ${#Sect[content]} in
-#    0)  : ;;
-#    y)  line.parser.dispatch -h doc.builder.sect.append "
-#"
-#        ;;
-#  esac
   line.parser.dispatch -h doc.builder.sect.append "
 "
 }
@@ -633,17 +611,13 @@ line.parser.para-blank() {
 # Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-append() {
-  : "'${1:-}'"
-  local content="${1##*( )}" ; content="${content%%*( )}"
-  : "'${content:-}'"
+  local content="${1##*( )}"
 
   case "${Sect[title]:-n}" in n) return ;; esac
 
   case c${content//[[:space:]]} in c) return ;; esac
 
-  : "'${Para[content]:+}'"
   Para[content]+="${Para[content]:+ }${content%%*( )}"
-  : "'${Para[content]:+}'"
 }
 
 # ------------------------------------------------------------------------------
@@ -651,50 +625,47 @@ line.parser.para-append() {
 # Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-list-entry-bullet() {
-  local content="$1" ; content="${content%%*( )}"
+  local content="${1##*( )}"
   
-  line.parser.list-entry "${content### }"
+  line.parser.dispatch -h line.parser.list-entry '-' "${content### }"
 }
 
-line.parser.para-list-entry-bullet-append() { line.parser.append -n "$1" ; }
-
-# ------------------------------------------------------------------------------
-# Description:  Routine to process a bullet list paragraph entry
-# Env Vars:     $Para 
-# ------------------------------------------------------------------------------
-line.parser.para-list-entry-enum-alt() {
-  local content="$1" ; content="${content%%*( )}"
-  content="${content###.+( )}"
-  
-  line.parser.list-entry "${content### }"
-}
-
-line.parser.para-list-entry-enum-alt() { line.parser.append -n "$1" ; }
+#line.parser.para-list-entry-bullet-append() { line.parser.append -n "$1" ; }
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a bullet list paragraph entry
 # Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-list-entry-enum() {
-  local content="$1" ; content="${content%%*( )}"
-  content="${content##+([0-9]).+( )}"
-  
-  line.parser.list-entry "${content### }"
+  line.parser.dispatch -h line.parser.list-entry '+([0-9]).' "$1"
+  exit 99
 }
 
-line.parser.para-list-entry-enum() { line.parser.append -n "$1" ; }
+#line.parser.para-list-entry-enum-append() { line.parser.append -n "$1" ; }
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to process a bullet list paragraph entry
+# Env Vars:     $Para 
+# ------------------------------------------------------------------------------
+line.parser.para-list-entry-enum-alt() {
+  local content="${1###.+( )}"
+  
+  line.parser.list-entry '1.' "${content### }"
+}
+
+#line.parser.para-list-entry-enum-alt-append() { line.parser.append -n "$1" ; }
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to process a bullet list paragraph entry
 # Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-list-entry-var() {
-  local content="$1" ; content="${content%%*( )}"
+  local content="$1" #; content="${content%%*( )}"
   
-  line.parser.list-entry "${content### }"
+  line.parser.list-entry '-' "${content### }"
 }
 
-line.parser.para-list-entry-var() { line.parser.append -n "$1" ; }
+#line.parser.para-list-entry-var-append() { line.parser.append -n "$1" ; }
 
 # ------------------------------------------------------------------------------
 # Description:  Dummy handler - provisioned solely to accept ignored
@@ -858,9 +829,15 @@ done
 
 shift $((OPTIND - 1))
 
+# Determine the source script filename
 declare Fname ; case "${OwnREADME:-n}" in
   n)  Fname="${1:-'-'}" ;;
   *)  Fname=$0 ;;
+esac
+
+# ... and verify it
+case "$(builtin echo $Fname*)" in
+  *\*)  report.fatal "File not found: '$Fname'" ;;
 esac
 
 eval $SHOPT
@@ -884,6 +861,10 @@ while read ; do
   : "LINE END - $LineNo: '$LineContent'"
   :
 done < <(cat -n "$Fname")
+
+case ${LineNo:-n} in
+  n)  report.warn "Empty file: '$Fname'" ;;
+esac
 
 line.parser.dispatch -h eof
 

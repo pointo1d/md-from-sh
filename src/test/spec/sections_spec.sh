@@ -4,7 +4,7 @@
 specfile-setup
 
 Describe "$OUT - sections behaviours ($SHELLSPEC_SPECFILE)"
-  Describe "empty i.e. default/non-default, behaviours - $FILE_DIR"
+  Describe "empty i.e. default/non-default, behaviours"
     Parameters:matrix
       # scope (number of sections)
       none single multi all
