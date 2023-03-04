@@ -514,13 +514,16 @@ line.parser.list-entry.continue() {
 # ------------------------------------------------------------------------------
 line.parser.list-entry() {
   # Get the entry and also its 'type'
-  local content="$1" no_leading="${1##+( )}" type leader
+  local content="$1" no_leading="${1##+( )}" type leader prefix
+
   case "$no_leading" in
       -*)         type=bullet ;;
       +([0-9]).*) type=enum
                   content="${content/+([0-9])./1.}"
                   ;;
-      \$*)        type=var ;;
+      \$*)        type=var
+                  prefix='- '
+                  ;;
       *)          line.parser.warn \
                     $LineNo "Unknown list entry type" "$LineContent"
                   ;;
@@ -586,7 +589,7 @@ line.parser.list-entry() {
         ;;
   esac
 
-  doc.builder.para.append -n -- "${indent:-}${content##+( )}"
+  doc.builder.para.append -n -- "${indent:-}${prefix:-}${content##+( )}"
 }
 
 # ------------------------------------------------------------------------------
