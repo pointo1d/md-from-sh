@@ -528,14 +528,16 @@ line.parser.list-entry() {
       '- $'*)     # Temporarily remove the prefix
                   local entry="${no_leading#- }"
 
-                  # Now ensure the var name has a triple back tick post-fix
+                  # Now ensure the var name has a triple back tick postfix
                   entry="${entry/ /\`\`\` }"
 
-                  # Finally, re-add the prefix
+                  # Finally, add the triple back tick prefix
                   no_leading="- \`\`\`$entry"
                   ;;
       -*)         : ;;
-      +([0-9]).*) no_leading="${no_leading/+([0-9])./1.}" ;;
+      +([0-9]).*) # Ensure the enumerator is '1.'
+                  no_leading="${no_leading/+([0-9])./1.}"
+                  ;;
       *)          line.parser.warn \
                     $LineNo "Unknown list entry type" "$LineContent"
                   ;;
@@ -556,14 +558,18 @@ line.parser.list-entry() {
           -*) # New nested list, so push it onto the indent record
               Indents=( $indent ${Indents[@]} )
               ;;
-          *)  # Reversion (to previous level), so attempt to find it in the
-              # previous levels
-              local i=0 ; while test ${Indents[$i]} != $indent -a $i -ge 0 ; do
-                : $((i+=1))
+          *)  # Reversion to a previous level, so attempt to find it in the
+              # previous levels - clearing out the levels as we go
+              : ${#Indents[@]}, ${!Indents[@]}
+              while test ${#Indents[@]} -gt 0 ; do
+                case ${Indents[0]} in
+                  $indent)  break ;;
+                  *)        Indents=( ${Indents[@]:1} ) ;;
+                esac
               done
 
-              case ${i:-n} in
-                n)  parser.report.warn \
+              case ${#Indents[@]} in
+                0)  parser.report.warn \
                       "Previous list indent level $indent not found"
                     ;;
               esac
