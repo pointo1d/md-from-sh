@@ -514,23 +514,32 @@ line.parser.list-entry.continue() {
 # ------------------------------------------------------------------------------
 line.parser.list-entry() {
   # Get the entry and also its 'type'
-  local content="$1" no_leading="${1##+( )}" type leader prefix
+  local content="$1" no_leading="${1##+( )}" indent indent_lvl
 
+  # Determine the indent level of the current line/entry
+  local indent="${1%%[^ ]*}" ; indent=${#indent}
+
+  # Now do any entry-type specific processing
   case "$no_leading" in
-      -*)         type=bullet ;;
-      +([0-9]).*) type=enum
-                  content="${content/+([0-9])./1.}"
+      \$*)        # Implicit var list entry, so add the correct prefix -
+                  # dropping thro' to pre-process the entry
+                  no_leading="- $no_leading"
+                  ;&
+      '- $'*)     # Temporarily remove the prefix
+                  local entry="${no_leading#- }"
+
+                  # Now ensure the var name has a triple back tick post-fix
+                  entry="${entry/ /\`\`\` }"
+
+                  # Finally, re-add the prefix
+                  no_leading="- \`\`\`$entry"
                   ;;
-      \$*)        type=var
-                  prefix='- '
-                  ;;
+      -*)         : ;;
+      +([0-9]).*) no_leading="${no_leading/+([0-9])./1.}" ;;
       *)          line.parser.warn \
                     $LineNo "Unknown list entry type" "$LineContent"
                   ;;
   esac
-
-  # Determine the indent level of the current line
-  local indent="${1%%[^ ]*}" ; indent=${#indent}
 
   # Now determine if it's at variance to the indent level of the current list
   case ${#Indents[@]} in
@@ -539,6 +548,7 @@ line.parser.list-entry() {
         ;;
     *)  # There is a list, so does the current indentation differ from the
         # existing list
+        : $((${Indents[0]} - indent))
         case $((${Indents[0]} - indent)) in
           0)  # Continuation of the existing list i.e. no change
               :
@@ -548,25 +558,14 @@ line.parser.list-entry() {
               ;;
           *)  # Reversion (to previous level), so attempt to find it in the
               # previous levels
-              case "${Indents[@]}" in
-                *" $indent"|\
-                *" $indent "*)  # It's on there, so now clear the indent stack
-                                # down to the current level
-                                local i
-                                for ((i ; i < ${#Indents[@]} ; i++)); do
-                                  case ${Indents[$i]} in
-                                    $indent)  # Found it
-                                              break
-                                              ;;
-                                    *)        # Not found, so remove it
-                                              Indents=( ${Indents[@]:1} )
-                                              ;;
-                                  esac
-                                done
-                                ;;
-                *)              report.fatal \
-                                  "Previous list indent level $indent not found"
-                                ;;
+              local i=0 ; while test ${Indents[$i]} != $indent -a $i -ge 0 ; do
+                : $((i+=1))
+              done
+
+              case ${i:-n} in
+                n)  parser.report.warn \
+                      "Previous list indent level $indent not found"
+                    ;;
               esac
               ;;
         esac
@@ -574,22 +573,21 @@ line.parser.list-entry() {
   esac
 
   # Append a newline if there's an entry already present
-  case ${Para[content]:-n} in
-    n)  ;;
-    *)  doc.builder.para.append -n "
+  case ${Para[content]:+y} in
+    y)  doc.builder.para.append -n "
 "
         ;;
   esac
 
-  : ${#Indents[@]}
-  local indent ; case ${#Indents[@]} in
-    1)  indent='' ;;
-    *)  : ${#Indents[@]}, $(( ${#Indents[@]} * 2))
-        indent="$(printf "%*.0s" $(( ${#Indents[@]} * 2)))"
+  local indent_lvl=$((${#Indents[@]} - 1))
+  local indent_str ; case $indent_lvl in
+    0)  indent_str='' ;;
+    *)  : $indent_lvl, $(( indent_lvl * 2))
+        indent_str="$(printf "%*.0s" $(( $indent_lvl * 2)))"
         ;;
   esac
 
-  doc.builder.para.append -n -- "${indent:-}${prefix:-}${content##+( )}"
+  doc.builder.para.append -n -- "${indent_str:-}$no_leading"
 }
 
 # ------------------------------------------------------------------------------
