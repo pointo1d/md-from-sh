@@ -36,8 +36,7 @@ specfile-setup() {
     EXAMPLES_DIR=${SHELLSPEC_SPECFILE%/*}/examples
     BIN_DIR=$SHELLSPEC_HELPERDIR/bin
   export LIB_DIR=${BIN_DIR/bin/lib} \
-    FILE_DIR="$EXAMPLES_DIR/file" \
-    LISTS_DIR="$EXAMPLES_DIR/lists"
+    FILE_EXAMPLES_DIR="$EXAMPLES_DIR/file"
 }
 
 ##find-test-file() {
