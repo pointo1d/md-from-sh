@@ -3,32 +3,25 @@
 
 specfile-setup
 
-Describe "$OUT - lists - simple behaviours ($SHELLSPEC_SPECFILE)"
-  Parameters:matrix
-    # List type
-    bullet enum var
-    # List spec `type'
-    explicit implicit
-    # List nesting
-    #simple nested
-    simple
+Describe "$OUT - lists - var - simple behaviours ($SHELLSPEC_SPECFILE)"
+  Parameters
+    explicit
+    implicit
   End
 
-  Example "G-P: $1-$2-$3"
+  Example "G-P: var-$1-simple"
     src= md= stderr=
 
     for ext in sh md stderr ; do
       declare -n var=$ext
 
-      efnm=$(find-test-file $LISTS_DIR $ext $1 $2 $3)
+      efnm=$(find-test-file $EXAMPLES_DIR $ext var $1 simple)
 
       if test "${efnm:-}" ; then
         var=$efnm
       fi
     done
 
-    Skip if "Implicit bullet lists not supported!!" test $1$2 = bulletimplicit
-    Skip if "Implicit enum lists not supported!!" test $1$2 = enumimplicit
     Skip if "No source ('${sh:-}')" test ! "${sh:-}"
     Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"
 

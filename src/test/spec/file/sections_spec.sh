@@ -15,12 +15,16 @@ Describe "$OUT - sections behaviours ($SHELLSPEC_SPECFILE)"
     End
 
     Example "O-N: $1-$2 ($3)"
+      Skip if "Invalid empty file combination" test $1 = none -a $2 = 'blank'
+      Skip if "Default content generation NYI" test $1 = none -a $3 = 'default'
+      Skip if "Default content generation NYI" test $3 = 'default'
+
       src= md= stderr=
 
       # Attempt to find the appropriate expectation file(s)
       for ext in sh md stderr ; do
         declare -n var=$ext
-        efnm=$(find-test-file $FILE_DIR $ext $1 $2 $3)
+        efnm=$(find-test-file $EXAMPLES_DIR $ext $1 $2 $3)
 
         if test "$efnm" ; then
           var=$efnm
@@ -29,9 +33,6 @@ Describe "$OUT - sections behaviours ($SHELLSPEC_SPECFILE)"
 
       test $3 = default && opts=d
 
-      Skip if "Invalid empty file combination" test $1 = none -a $2 = 'blank'
-      Skip if "Default content generation NYI" test $1 = none -a $3 = 'default'
-      Skip if "Default content generation NYI" test $3 = 'default'
       Skip if "No source ('$sh')" test ! "${sh:-}"
       Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"
     
@@ -59,7 +60,7 @@ Describe "$OUT - sections behaviours ($SHELLSPEC_SPECFILE)"
 
   Describe "line behaviours"
     It "Continued lines handled properly"
-      sh=$FILE_DIR/continued-sect.sh
+      sh=$EXAMPLES_DIR/continued-sect.sh
       md=${sh/.sh/.md}
 
       When run script $OUT $sh
@@ -67,7 +68,7 @@ Describe "$OUT - sections behaviours ($SHELLSPEC_SPECFILE)"
     End
 
     It "Muliple paragraphs handled properly"
-      sh=$FILE_DIR/multi-para-section.sh
+      sh=$EXAMPLES_DIR/multi-para-section.sh
       md=${sh/.sh/.md}
 
       When run script $OUT $sh
