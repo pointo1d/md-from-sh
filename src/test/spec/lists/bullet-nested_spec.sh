@@ -10,7 +10,7 @@ Describe "$OUT - lists - bullet - nested behaviours ($SHELLSPEC_SPECFILE)"
   End
 
   Example "G-P: bullet-$1-nested"
-    Skip if "Implicit bullet lists not supported!!" test $1 = implicit
+    Skip if "Implicit bullet lists - no such markdown!!!" test $1 = implicit
 
     src= md= stderr=
 
