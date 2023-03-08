@@ -34,22 +34,19 @@
 #                 - Missing/empty section(s)
 #                   - Main body.
 #                   - Functions.
+#                   - Repeated list entries.
 #                 - Missing shebang.
 #               - Lists
 #                 - Simple
 #                   - Linear
 #                     - ~Bulleted.~
-#                     - Enumerated.
-#                     - Variables.
+#                     - ~Enumerated.~
+#                     - ~Variables.~
 #                   - Nested
-#                     - Bulleted.
-#                     - Enumerated.
-#                     - Variables.
-#                 - Composite.
-#                   - Nested
-#                     - Bulleted.
-#                     - Enumerated.
-#                     - Variables.
+#                     - ~Bulleted.~
+#                     - ~Enumerated.~
+#                     - ~Variables.~
+#                 - ~Composite/mixed - implies nested.~
 #               - CLI options
 #                 - Generate own README i.e. README for this script.
 #                 - Content generation
@@ -60,6 +57,8 @@
 #                   - Enable.
 #                   - Fatal.
 #                 - Output filename, default - ${infile/.sh/.md}.
+#                 - Extend '-l' processing to cater for '-d' to specify show
+#                   section(s) having default gerenerator(s).
 #               - ~Removal of the lookahead requirement renders the file
 #                 "module" redundant - remove it.~
 #               - Addition of comment comments ;-).
