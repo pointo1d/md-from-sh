@@ -5,8 +5,8 @@ specfile-setup
 
 Describe "$OUT - lists - bullet - simple behaviours ($SHELLSPEC_SPECFILE)"
   Parameters
-    implicit
     explicit
+    implicit
   End
 
   Example "G-P: bullet-$1-simple"
