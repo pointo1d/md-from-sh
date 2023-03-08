@@ -4,20 +4,21 @@
 specfile-setup
 
 Describe "$OUT - lists - mixed/composite behaviours ($SHELLSPEC_SPECFILE)"
-  Example "G-P: "
-##    src= md= stderr=
-##
-##    for ext in sh md stderr ; do
-##      declare -n var=$ext
-##
-##      efnm=$(find-test-file $LISTS_DIR $ext $1 $2 nested)
-##
-##      if test "${efnm:-}" ; then
-##        var=$efnm
-##      fi
-##    done
+  Parameters
+    explicit
+    implicit
+  End
 
-    Pending "Mixed/composite lists NYI"
+  Example "G-P: mixed-$1-nested"
+    for ext in sh md stderr ; do
+      declare -n var=$ext
+
+      efnm=$(find-test-file $EXAMPLES_DIR $ext mixed $1 nested)
+
+      if test "${efnm:-}" ; then
+        var=$efnm
+      fi
+    done
 
     Skip if "No source ('${sh:-}')" test ! "${sh:-}"
     Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"
