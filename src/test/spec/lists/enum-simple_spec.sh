@@ -22,8 +22,6 @@ Describe "$OUT - lists - enum - simple behaviours ($SHELLSPEC_SPECFILE)"
       fi
     done
 
-    Skip if "Implicit enum lists NYI" test $1 = implicit
-
     Skip if "No source (in '$EXAMPLES_DIR')" test ! "${sh:-}"
     Skip if 'No expectation (*.(md|stderr)' test ! "${md:-}" -a ! "${stderr:-}"
 

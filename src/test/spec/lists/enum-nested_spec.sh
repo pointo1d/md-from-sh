@@ -10,8 +10,6 @@ Describe "$OUT - lists - enum - nested behaviours ($SHELLSPEC_SPECFILE)"
   End
 
   Example "G-P: enum-$1-nested"
-    Skip if "Implicit enum lists not supported!!" test $1 = implicit
-
     src= md= stderr=
 
     for ext in sh md stderr ; do

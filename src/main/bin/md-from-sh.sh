@@ -232,6 +232,7 @@ line.parser.get-type() {
   local content="$1"
 
   case "$content" in
+    '#!'*)      ret=ignore ;;
     '#'|\
     '#'+(-)|\
     '# '+(-)|\
@@ -250,6 +251,7 @@ line.parser.get-type() {
                   [A-Z]+([- A-Za-z]):*) ret=sect-header ;;
                   *( )-*|\
                   *( )\$*|\
+                  *( )\#*|\
                   *( )+([0-9]).*)       ret=list-entry ;;
                   *)                    : ${Sect[title]:-n}
                                         case ${Sect[title]:-n} in
@@ -535,6 +537,9 @@ line.parser.list-entry() {
                   no_leading="- \`\`\`$entry"
                   ;;
       -*)         : ;;
+      \#*)        # Ensure the implicit enumerator is '1.'
+                  no_leading="${no_leading/\#/1.}"
+                  ;;
       +([0-9]).*) # Ensure the enumerator is '1.'
                   no_leading="${no_leading/+([0-9])./1.}"
                   ;;
