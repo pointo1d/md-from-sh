@@ -5,7 +5,8 @@
 # Synopsis:     md-from-sh [-d] [-l] [-w] [-R | Fname]
 # Description:  Pure bash script to generate markdown from pre-defined,
 #               well-formed comments.
-# Opts:         -d  - enable default content for section(s) (as appropriate).
+# Opts:         -d  - default content generation - enable generator or rporter
+#                     (with '-l'.
 #               -l  - list the configured section titles c/w the ordering in
 #                     which they appear in the output.
 #               -w  - enable warnings.
@@ -57,8 +58,8 @@
 #                   - Enable.
 #                   - Fatal.
 #                 - Output filename, default - ${infile/.sh/.md}.
-#                 - Extend '-l' processing to cater for '-d' to specify show
-#                   section(s) having default gerenerator(s).
+#                 - ~Extend '-l' processing to cater for '-d' to specify show
+#                   section(s) having default gerenerator(s).~
 #               - ~Removal of the lookahead requirement renders the file
 #                 "module" redundant - remove it.~
 #               - Addition of comment comments ;-).
@@ -103,7 +104,7 @@ shopt -ou xtrace
 
 declare \
   Fname LineNo LineContent GenDefaultContent Warnings FatalWarnings OwnREADME \
-  Sections=() Indents=() HdrContentOrder=(
+  ListSections Sections=() Indents=() HdrContentOrder=(
     'Synopsis' 'Description' 'Where' 'Opts' 'Args' 'Returns' 'Env Vars' 'Notes'
   ) \
   FuncHdrOrder=( 'Function' "${HdrContentOrder[@]}" ) \
@@ -573,7 +574,7 @@ line.parser.list-entry() {
               done
 
               case ${#Indents[@]} in
-                0)  parser.report.warn \
+                0)  line.parser.warn \
                       "Previous list indent level $indent not found"
                     ;;
               esac
@@ -798,6 +799,28 @@ doc.generator.generate() {
   esac
 }
 
+cli.list-sections() {
+  local show_default=${1:-}
+
+  report.info "\
+The 'standard' headings are (in order of generation)...
+"
+  declare sect ; while read -r sect ; do
+    local has_defaults ; case ${show_default:+y} in
+      y)  has_defaults=${SectDefaults["$sect"]:+y} ;;
+    esac
+
+    builtin echo "    $sect${has_defaults:+ (has default)}"
+  done < <(printf "%s\n" "${ContentOrder[@]}")
+
+  builtin echo -e "
+Note that aliases/alternatives are indicated using the pipe ('|') symbol
+"
+
+  exit 0
+
+}
+
 ################################################################################
 ################################################################################
 ########
@@ -809,22 +832,11 @@ doc.generator.generate() {
 declare OPTARG OPTIND opt
 while getopts 'dlwW' opt ; do
   case $opt in
-    d)  #H# Enable default content, default - disabled
+    d)  #H# Enable default content or, for 'l' opt only, reporting thereof, default - disabled
         GenDefaultContent=t
         ;;
     l)  #H# List configured section names/titles
-        report.info "\
-The 'standard' headings are (in order of generation)...
-"
-        declare sect ; while read -r sect ; do
-          builtin echo "    $sect"
-        done < <(printf "%s\n" "${ContentOrder[@]}")
-
-        builtin echo -e "
-Note that aliases/alternatives are indicated using the pipe ('|') symbol
-"
-
-        exit 0
+        ListSections=t
         ;;
     w)  #H# Enable warnings, default - disabled
         Warnings=t
@@ -839,6 +851,12 @@ Note that aliases/alternatives are indicated using the pipe ('|') symbol
 done
 
 shift $((OPTIND - 1))
+
+case ${ListSections:+y} in
+  y)  cli.list-sections ${GenDefaultContent:-}
+      exit 0
+      ;;
+esac
 
 # Determine the source script filename
 declare Fname ; case "${OwnREADME:-n}" in

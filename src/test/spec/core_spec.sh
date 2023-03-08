@@ -4,12 +4,23 @@
 specfile-setup
 
 Describe "$OUT - core (${SHELLSPEC_SPECFILE})"
-  Describe "list heading command"
-    md="$EXAMPLES_DIR/headings-list.md"
+  Describe "section header listing from CLI"
+    Describe "Basic capability"
+      md="$EXAMPLES_DIR/headings-list.md"
 
-    It 'G-P: lists standard headings in the order seen in generated output'
-      When run script $OUT -l
-      The stdout should equal "$(<$md)"
+      It 'G-P: lists configured sections, in the given order, on STDOUT'
+        When run script $OUT -l
+        The stdout should equal "$(<$md)"
+      End
+    End
+
+    Describe "Enhanced i.e. defauult generator identification, capability"
+      md="$EXAMPLES_DIR/headings-list-with-defaults.md"
+
+      It 'G-P: lists configured sections with default gen capability, in the given order, on STDOUT'
+        When run script $OUT -ld
+        The stdout should equal "$(<$md)"
+      End
     End
   End
 
