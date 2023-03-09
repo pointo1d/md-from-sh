@@ -42,18 +42,25 @@
 #                   - Linear
 #                     - ~Bulleted.~
 #                     - ~Enumerated.~
+#                     - Opts
+#                       - ~short/simple.~
+#                       - ~long.~
+#                       - ~mixed.~
 #                     - ~Variables.~
 #                   - Nested
 #                     - ~Bulleted.~
 #                     - ~Enumerated.~
 #                     - ~Variables.~
-#                 - ~Composite/mixed - implies nested.~
+#                   - ~Composite/mixed - implies nested.~
 #               - CLI options
 #                 - Generate own README i.e. README for this script.
 #                 - Content generation
 #                   - Default section.
 #                   - ToC section.
-#                   - Synopsis.
+#                   - Synopsis generation
+#                     - Script level.
+#                     - Function level.
+#                   - Generation timestamp.
 #                 - Warnings
 #                   - Enable.
 #                   - Fatal.
@@ -64,7 +71,7 @@
 #                 "module" redundant - remove it.~
 #               - Addition of comment comments ;-).
 #               - Tests
-#                 - Better faacilitate modular testing
+#                 - Better facilitate modular testing
 #                   - Disparate contents, lists etc. specific scripts.
 #                   - Helpers e.g. src/tgt file name determination.
 # Notes:
@@ -314,7 +321,7 @@ line.parser.dispatch() {
     $handler "$@"
   }
 
-#  set +o xtrace
+  set +o xtrace
 
   local OPTARG OPTIND opt handler
   while getopts 'h:' opt ; do
@@ -408,6 +415,7 @@ doc.builder.para.append() {
 # ------------------------------------------------------------------------------
 doc.builder.sect.begin() {
   local content="$*" title="${*%%:*}"
+  : ${#content}
 
   # Extract & validate the section header
   local name ; case "${Sections[@]}" in
@@ -427,8 +435,8 @@ doc.builder.sect.begin() {
 
   # Process the remaining line with the title replaced with it's equiv in
   # spaces
-  local spaces="$title:" ; spaces="${spaces//[:A-Za-z]/ }" ; : ${#spaces}
-  line.parser.dispatch "${content/$title:/${spaces/# /#}}"
+  local spaces="$title:" ; spaces="${spaces//[:A-Za-z ]/ }"
+  line.parser.dispatch "${content/$title:/$spaces}"
 
   : $(declare -p Sect)
 }
@@ -523,29 +531,49 @@ line.parser.list-entry() {
 
   # Now do any entry-type specific processing
   case "$no_leading" in
-      \$*)        # Implicit var list entry, so add the correct prefix -
-                  # dropping thro' to pre-process the entry
-                  no_leading="- $no_leading"
-                  ;&
-      '- $'*)     # Temporarily remove the prefix
-                  local entry="${no_leading#- }"
+      \$*)
+        # Implicit var list entry, so add the correct
+        # prefix ... dropping thro' to pre-process the entry
+        no_leading="- $no_leading"
+        ;&
+      '- $'*)
+        # Temporarily remove the prefix
+        local entry="${no_leading#- }"
 
-                  # Now ensure the var name has a triple back tick postfix
-                  entry="${entry/ /\`\`\` }"
+        # Now ensure the var name has a triple back tick
+        # postfix
+        entry="${entry/ /\`\`\` }"
 
-                  # Finally, add the triple back tick prefix
-                  no_leading="- \`\`\`$entry"
-                  ;;
-      -*)         : ;;
-      \#*)        # Ensure the implicit enumerator is '1.'
-                  no_leading="${no_leading/\#/1.}"
-                  ;;
-      +([0-9]).*) # Ensure the enumerator is '1.'
-                  no_leading="${no_leading/+([0-9])./1.}"
-                  ;;
-      *)          line.parser.warn \
-                    $LineNo "Unknown list entry type" "$LineContent"
-                  ;;
+        # Finally, add the triple back tick prefix
+        no_leading="- \`\`\`$entry"
+        ;;
+      --+([-A-Za-z0-9_])\ *)
+        : LONG_OPT_IMPLICIT
+        no_leading="- $no_leading"
+        ;;
+      -\ --+([-A-Za-z0-9_])\ *)
+        : LONG_OPT_EXPLICIT
+        ;;
+      -[A-Za-z0-9_]\ *)
+        : SHORT_OPT_IMPLICIT
+        no_leading="- $no_leading"
+        ;;
+      -\ -[A-Za-z0-9_]\ *)
+        : SHORT_OPT_EXPLICIT
+        ;;
+      \#*)                  # Implicit enumerator - ensure it's '1.'
+        no_leading="${no_leading/\#/1.}"
+        ;;
+      +([0-9]).*)           # Ensure the enumerator is '1.'
+        no_leading="${no_leading/+([0-9])./1.}"
+        ;;
+      -\ *)
+        : SIMPLE_BULLET
+        ;;
+      *)
+        line.parser.warn \
+          $LineNo "Unknown list entry type" "$LineContent"
+        ;;
   esac
 
   # Now determine if it's at variance to the indent level of the current list
@@ -880,11 +908,11 @@ while read ; do
   : "LINE BEGIN - $LineNo: '$LineContent'"
   :
 
-  : $(declare -p Para)
+#  : $(declare -p Para)
 
   line.parser.dispatch "$LineContent"
 
-  : $(declare -p Para)
+#  : $(declare -p Para)
 
   :
   : "LINE END - $LineNo: '$LineContent'"
