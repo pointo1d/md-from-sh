@@ -14,7 +14,7 @@ Describe "$OUT - core (${SHELLSPEC_SPECFILE})"
       End
     End
 
-    Describe "Enhanced i.e. defauult generator identification, capability"
+    Describe "Enhanced i.e. default generator identification, capability"
       md="$EXAMPLES_DIR/headings-list-with-defaults.md"
 
       It 'G-P: lists configured sections with default gen capability, in the given order, on STDOUT'
