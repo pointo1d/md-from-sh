@@ -613,9 +613,7 @@ line.parser.list-entry() {
 
   # Append a newline if there's an entry already present
   case ${Para[content]:+y} in
-    y)  doc.builder.para.append -n "
-"
-        ;;
+    y)  doc.builder.para.append -n "\n" ;;
   esac
 
   local indent_lvl=$((${#Indents[@]} - 1))
@@ -642,8 +640,7 @@ line.parser.list-entry() {
 # Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-blank() {
-  line.parser.dispatch -h doc.builder.sect.append "
-"
+  line.parser.dispatch -h doc.builder.sect.append "\n"
 }
 
 # ------------------------------------------------------------------------------
@@ -758,7 +755,7 @@ doc.generator.generate-sect() {
                 content="${Content["$sect"]:-}"
                 lineno="${content%% *}"
                 content="${content##$lineno }"
-                no_spaces="${content//[[:space:]]}"
+                no_spaces="${content//[[:space:]\\n]}"
                 ;;
     *)          # Sect not used
                 return
@@ -774,6 +771,7 @@ doc.generator.generate-sect() {
               msg='defaults not enabled'
 
               # ... and delete the "section
+              : ${Content["$sect"]}
               unset Content["$sect"]
               ;;
           *)  # Otherwise, generate the default content for the section
@@ -789,10 +787,12 @@ doc.generator.generate-sect() {
         esac
 
         line.parser.warn $lineno "Empty section: '$sect'" "$msg"
+
+        return
         ;;
   esac
 
-  case "${#content}" in 0) return ;; esac
+##  case "${#content}" in 0) return ;; esac
 
   case "$sect" in
    File)  printf "# $content" ;;

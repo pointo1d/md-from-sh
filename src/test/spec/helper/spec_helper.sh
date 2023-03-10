@@ -60,24 +60,24 @@ specfile-setup() {
 ##}
 
 find-test-file() {
-  local dnm=${1:-$SHELLSPEC_SPECFILE%/*} ; shift
-  local fnms=(
-    "$2-$3${4:+-$4}"
-    "$2-$3-"
-    "$2${4:+-$4}"
-    "$2--"
-    "-$3${4:+-$4}"
-    "-${4:+-$4}"
-    "-$3-"
-    "--"
-  )
+#set -x
+#: find-test-file $@
+  local dnm=${1:-$SHELLSPEC_SPECFILE%/*} ext=$2 ; shift 2 ; local args=($@)
 
-  for fnm in ${fnms[@]} ; do
-    fnm=$dnm/$fnm.$1
-    test -f $fnm || continue
+  local fnms=() ; 
+  eval maps="($(for ((i=1;i<=${#args[@]};i++)) ; do printf "{0..1}" ; done))"
 
-    printf "%s" $fnm
-    touch $fnm
+  for map in ${maps[@]} ; do
+    local c= fnm= ; for ((c=0;c<${#map};c++)) ; do
+      case ${map:$c:1} in 1) fnm+="${args[$c]:-}" ;; esac
+      fnm+='-'
+    done
+
+    local tfnm=$dnm/${fnm%-}.$ext
+    test -f $tfnm || continue
+
+    printf "%s" $tfnm
+    touch $tfnm
     break
   done
 }
