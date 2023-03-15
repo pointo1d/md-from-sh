@@ -111,7 +111,7 @@ shopt -ou xtrace
 
 declare \
   Fname LineNo LineContent GenDefaultContent Warnings FatalWarnings OwnREADME \
-  ListSections Sections=() Indents=() HdrContentOrder=(
+  ListSections Break Sections=() Indents=() HdrContentOrder=(
     'Synopsis' 'Description' 'Where' 'Opts' 'Args' 'Returns' 'Env Vars' 'Notes'
   ) \
   FuncHdrOrder=( 'Function' "${HdrContentOrder[@]}" ) \
@@ -239,7 +239,7 @@ line.parser.get-type() {
   local content="$1"
 
   case "$content" in
-    '#!'*)      ret=ignore ;;
+    '#!'*)      ret=shebang ;;
     '#'|\
     '#'+(-)|\
     '# '+(-)|\
@@ -286,6 +286,11 @@ line.parser.sect-header() {
   line.parser.dispatch -h doc.builder.sect.end
   line.parser.dispatch -h doc.builder.sect.begin "$line"
 }
+
+# ------------------------------------------------------------------------------
+# Description:  
+# ------------------------------------------------------------------------------
+line.parser.shebang() { : ; }
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to determine, validate and dispatch the appropriate
@@ -342,8 +347,12 @@ line.parser.dispatch() {
 
   case ${handler##line.parser.} in
     sect-header)    dispatch-it $handler "${args%%*( )}" ;;
-    func-defn-prv)  dispatch-it doc.builder.block.abort ;;
-    func-defn-pub)  dispatch-it doc.builder.block.end ;;
+    func-defn-prv)  dispatch-it doc.builder.block.abort
+                    Break=t
+                    ;;
+    func-defn-pub)  dispatch-it doc.builder.block.end 
+                    Break=t
+                    ;;
     para-blank)     dispatch-it doc.builder.para.end
                     dispatch-it line.parser.$handler
                     ;;
@@ -713,6 +722,8 @@ line.parser.para-list-entry-var() {
 line.parser.ignore() {
   # Line is to be ignored, but close out any open section
   case "${Sect[title]:+y}" in y) doc.builder.sect.end ;; esac
+
+  Break=t
 }
 
 # ------------------------------------------------------------------------------
@@ -917,6 +928,9 @@ while read ; do
   :
   : "LINE END - $LineNo: '$LineContent'"
   :
+
+  # Ensure processing terminates on the 1st non-doc line
+  case ${Break:+y} in y) break ;; esac
 done < <(cat -n "$Fname")
 
 case ${LineNo:-n} in
