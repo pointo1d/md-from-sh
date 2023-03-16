@@ -1,8 +1,8 @@
 # Description
 
-1. Entry 1
-1. Entry 2
+Descriptive narrative.
 
 ---
 
 END OF FILE
+

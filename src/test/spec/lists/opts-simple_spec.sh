@@ -16,7 +16,7 @@ Describe "$OUT - opts behaviours ($SHELLSPEC_SPECFILE)"
     for ext in sh md stderr ; do
       declare -n var=$ext
 
-      efnm=$(find-test-file $EXAMPLES_DIR $ext opts $2 $1)
+      efnm=$(find-test-file $EXAMPLES_DIR/opts $ext opts $2 $1)
 
       if test "${efnm:-}" ; then
         var=$efnm

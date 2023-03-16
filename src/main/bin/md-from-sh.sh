@@ -235,39 +235,42 @@ line.parser.warn() {
 # ------------------------------------------------------------------------------
 line.parser.get-type() {
   local shopt="$(shopt -po xtrace)"
-#  set +o xtrace
-  local content="$1"
+  set -o xtrace
+ local content="$1" ret
 
   case "$content" in
-    '#!'*)      ret=shebang ;;
-    '#'|\
-    '#'+(-)|\
-    '# '+(-)|\
-    '#'+(#)|\
-    '# '+(#))   ret=ignore ;;
-    '#'+( ))    ret=para-blank ;;
+    '# '*)        # It's (potentially) a doc line in need of further examination
+                  case "$content" in
+                    \#+( ))     ret=para-blank ;;
+                    '# ---')    ret=para-hr ;;
+                    '# '+(\#)|\
+                    '# -'+(-))  ret=doc-ignore ;;
+                    *)          # Strip off the leading '# ' and go again
+                                content="${content### }"
+
+                                case "${content## }" in
+                                  [A-Z]+([- A-Za-z]):*) ret=sect-header ;;
+                                  *( )-*|\
+                                  *( )\$*|\
+                                  *( )\#*|\
+                                  *( )+([0-9]).*)       ret=list-entry ;;
+                                  *)                    : ${Sect[title]:-n}
+                                                        case ${Sect[title]:-n} in
+                                                          n)  ret=doc-ignore ;;
+                                                          *)  ret=para-append ;;
+                                                        esac
+                                                        ;;
+                                esac
+                                ;;
+                  esac
+                  ;;
+    '#!'*)        ret=shebang ;;
     _*'()'*|\
-    *._*'()'*)  ret=func-defn-prv
-                ret=ignore
-                ;;
-    *'()'*)     ret=func-defn-pub
-                ret=ignore
-                ;;
-    *)          content="${content### }"
-                case "${content## }" in
-                  [A-Z]+([- A-Za-z]):*) ret=sect-header ;;
-                  *( )-*|\
-                  *( )\$*|\
-                  *( )\#*|\
-                  *( )+([0-9]).*)       ret=list-entry ;;
-                  *)                    : ${Sect[title]:-n}
-                                        case ${Sect[title]:-n} in
-                                          n)  ret=ignore ;;
-                                          *)  ret=para-append ;;
-                                        esac
-                                        ;;
-                esac
-                ;;
+    *.[-_]*'()'*) ret=non-doc-func-defn-prv ;;
+    *'()'*)       ret=non-doc-func-defn-pub ;;
+    *)            # Other than the above, it's a non-doc line of no interest
+                  ret=non-doc
+                  ;;
   esac
 
   eval $shopt
@@ -280,17 +283,42 @@ line.parser.get-type() {
 #               handler for the current line.
 # Env Vars:     
 # ------------------------------------------------------------------------------
-line.parser.sect-header() {
-  local line="${1### }"
+line.parser.non-doc() {
+  :
+}
 
+# ------------------------------------------------------------------------------
+# Description:  Routine to determine, validate and dispatch the appropriate
+#               handler for the current line.
+# Env Vars:     
+# ------------------------------------------------------------------------------
+line.parser.doc-ignore() {
+  :
+##  Break=t
+}
+
+# ------------------------------------------------------------------------------
+# Description:  Routine to determine, validate and dispatch the appropriate
+#               handler for the current line.
+# Env Vars:     
+# ------------------------------------------------------------------------------
+line.parser.sect-header() {
   line.parser.dispatch -h doc.builder.sect.end
-  line.parser.dispatch -h doc.builder.sect.begin "$line"
+  line.parser.dispatch -h doc.builder.sect.begin "$1"
 }
 
 # ------------------------------------------------------------------------------
 # Description:  
 # ------------------------------------------------------------------------------
 line.parser.shebang() { : ; }
+
+line.parser.non-doc-func-defn-prv() {
+  Break=t
+}
+
+line.parser.non-doc-func-defn-pub() {
+  Break=t
+}
 
 # ------------------------------------------------------------------------------
 # Description:  Routine to determine, validate and dispatch the appropriate
@@ -308,10 +336,8 @@ line.parser.dispatch() {
   
     local handler=$1 ; shift
 
-    case "${handler:=$(line.parser.get-type "$@")}" in
-      *.*)  : ;;
-      *)    handler=line.parser.$handler ;;
-    esac
+    ##case "${handler:=$(line.parser.get-type "$@")}" in
+    case $handler in *.*) : ;; *) handler=line.parser.$handler ;; esac
 
     case "n$(type -t $handler)" in
       n)  report.fatal \
@@ -343,21 +369,23 @@ line.parser.dispatch() {
   esac
 
   : ${handler:=$(line.parser.get-type "$args")}
-  args="${args### }"
+  args="${args%%*( )}"
 
-  case ${handler##line.parser.} in
-    sect-header)    dispatch-it $handler "${args%%*( )}" ;;
-    func-defn-prv)  dispatch-it doc.builder.block.abort
-                    Break=t
-                    ;;
-    func-defn-pub)  dispatch-it doc.builder.block.end 
-                    Break=t
-                    ;;
-    para-blank)     dispatch-it doc.builder.para.end
-                    dispatch-it line.parser.$handler
-                    ;;
-    *)              dispatch-it $handler "${args%%*( )}"
-                    ;;
+  case $handler in
+    *.sect-header)    dispatch-it $handler "${args%%*( )}" ;;
+##    func-defn-prv)  dispatch-it doc.builder.block.abort
+##                    Break=t
+##                    ;;
+##    func-defn-pub)  dispatch-it doc.builder.block.end 
+##                    Break=t
+##                    ;;
+    *para-blank)      dispatch-it doc.builder.para.end
+                      dispatch-it line.parser.$handler
+                      ;;
+##    non-doc*|\
+##    para-ignore)    Break=t ;;
+    *)                dispatch-it $handler "${args%%*( )}"
+                      ;;
   esac
 
   eval $SHOPT
@@ -423,7 +451,7 @@ doc.builder.para.append() {
 # Description:  
 # ------------------------------------------------------------------------------
 doc.builder.sect.begin() {
-  local content="$*" title="${*%%:*}"
+  local content="$*" title="${*%%:*}" ; title="${title### }"
   : ${#content}
 
   # Extract & validate the section header
@@ -482,7 +510,7 @@ doc.builder.sect.end() {
 # Env Vars:     $Sect, $Para 
 # ------------------------------------------------------------------------------
 doc.builder.sect.append() {
-  local content="${1:-}" no_spaces="${1//[[:space:]]/}"
+  local content="${1:-}" no_spaces="${1//[[:space:]\\n]/}"
 
   : ${#Sect[content]}:${#no_spaces}
   case ${#Sect[content]}:${#no_spaces} in
@@ -533,10 +561,11 @@ line.parser.list-entry.continue() {
 # ------------------------------------------------------------------------------
 line.parser.list-entry() {
   # Get the entry and also its 'type'
-  local content="$1" no_leading="${1##+( )}" indent indent_lvl
+  local content="${1### }" no_leading indent indent_lvl
+  no_leading="${content##*( )}"
 
   # Determine the indent level of the current line/entry
-  local indent="${1%%[^ ]*}" ; indent=${#indent}
+  local indent="${content%%[^ ]*}" ; indent=${#indent}
 
   # Now do any entry-type specific processing
   case "$no_leading" in
@@ -650,6 +679,8 @@ line.parser.list-entry() {
 # ------------------------------------------------------------------------------
 line.parser.para-blank() {
   line.parser.dispatch -h doc.builder.sect.append "\n"
+  line.parser.dispatch -h doc.builder.para.end
+  Indents=()
 }
 
 # ------------------------------------------------------------------------------
@@ -657,7 +688,7 @@ line.parser.para-blank() {
 # Env Vars:     $Para 
 # ------------------------------------------------------------------------------
 line.parser.para-append() {
-  local content="${1##*( )}"
+  local content="${1###*( )}"
 
   case "${Sect[title]:-n}" in n) return ;; esac
 
@@ -713,18 +744,20 @@ line.parser.para-list-entry-var() {
 
 #line.parser.para-list-entry-var-append() { line.parser.append -n "$1" ; }
 
-# ------------------------------------------------------------------------------
-# Description:  Dummy handler - provisioned solely to accept ignored
-#               lines i.e. prevent them (ignored lines) from terminating the
-#               script.
-# Env Vars:     None. 
-# ------------------------------------------------------------------------------
-line.parser.ignore() {
-  # Line is to be ignored, but close out any open section
-  case "${Sect[title]:+y}" in y) doc.builder.sect.end ;; esac
-
-  Break=t
-}
+### ------------------------------------------------------------------------------
+### Description:  Dummy handler - provisioned solely to accept ignored
+###               lines i.e. prevent them (ignored lines) from terminating the
+###               script.
+### Env Vars:     None. 
+### ------------------------------------------------------------------------------
+##line.parser.ignore() {
+##  # Line is to be ignored, but close out any open section
+##  case "${Sect[title]:+y}" in y) doc.builder.sect.end ;; esac
+##
+##  case "${Content[*]:-n}" in n) return ;; esac
+##
+##  Break=t
+##}
 
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------

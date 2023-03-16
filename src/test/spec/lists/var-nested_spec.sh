@@ -15,7 +15,7 @@ Describe "$OUT - lists - var - nested behaviours ($SHELLSPEC_SPECFILE)"
     for ext in sh md stderr ; do
       declare -n var=$ext
 
-      efnm=$(find-test-file $EXAMPLES_DIR $ext var $1 nested)
+      efnm=$(find-test-file $EXAMPLES_DIR/var $ext var $1 nested)
 
       if test "${efnm:-}" ; then
         var=$efnm

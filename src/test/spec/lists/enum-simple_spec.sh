@@ -15,7 +15,7 @@ Describe "$OUT - lists - enum - simple behaviours ($SHELLSPEC_SPECFILE)"
     for ext in sh md stderr ; do
       declare -n var=$ext
 
-      efnm=$(find-test-file $EXAMPLES_DIR $ext enum $1 simple)
+      efnm=$(find-test-file $EXAMPLES_DIR/enum $ext enum $1 simple)
 
       if test "${efnm:-}" ; then
         var=$efnm

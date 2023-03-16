@@ -3,7 +3,8 @@
 
 specfile-setup
 
-Describe "$OUT - section endings behaviours ($SHELLSPEC_SPECFILE)"
+Describe "$OUT - distributed section behaviours ($SHELLSPEC_SPECFILE)"
+  Pending "Distributed sections NYI"
   Describe "a) post-section function"
     Parameters:matrix
       one multi
@@ -14,16 +15,15 @@ Describe "$OUT - section endings behaviours ($SHELLSPEC_SPECFILE)"
       # Attempt to find the appropriate expectation file(s)
       for ext in sh md ; do
         declare -n var=$ext
-        declare dir=$EXAMPLES_DIR/end
-        efnm=$(find-test-file $dir $ext end func $1 $2)
+        efnm=$(find-test-file $EXAMPLES_DIR $ext end func $1 $2)
 
         if test "$efnm" ; then
           var=$efnm
         fi
       done
 
-      Skip if "No source (in '$dir/*.sh')" test ! "${sh:-}"
-      Skip if "No expectation (in '$dir/*.md')" test ! "${md:-}"
+      Skip if "No source ('*.sh')" test ! "${sh:-}"
+      Skip if 'No expectation (*.md)' test ! "${md:-}"
     
       When run script $OUT ${sh:-}
 
@@ -39,18 +39,17 @@ Describe "$OUT - section endings behaviours ($SHELLSPEC_SPECFILE)"
 
     Example "G-P: end-$1"
       # Attempt to find the appropriate expectation file(s)
-      declare dir=$EXAMPLES_DIR/end
       for ext in sh md ; do
         declare -n var=$ext
-        efnm=$(find-test-file $dir $ext end $1)
+        efnm=$(find-test-file $EXAMPLES_DIR $ext end $1)
 
         if test "$efnm" ; then
           var=$efnm
         fi
       done
 
-      Skip if "No source (in '$dir/*.sh')" test ! "${sh:-}"
-      Skip if "No expectation (in '$dir/*.md')" test ! "${md:-}"
+      Skip if "No source ('*.sh')" test ! "${sh:-}"
+      Skip if 'No expectation (*.md)' test ! "${md:-}"
     
       When run script $OUT ${sh:-}
 

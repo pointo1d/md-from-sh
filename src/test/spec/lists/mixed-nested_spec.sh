@@ -13,7 +13,7 @@ Describe "$OUT - lists - mixed/composite behaviours ($SHELLSPEC_SPECFILE)"
     for ext in sh md stderr ; do
       declare -n var=$ext
 
-      efnm=$(find-test-file $EXAMPLES_DIR $ext mixed $1 nested)
+      efnm=$(find-test-file $EXAMPLES_DIR/mixed $ext mixed $1 nested)
 
       if test "${efnm:-}" ; then
         var=$efnm

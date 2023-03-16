@@ -1,6 +1,5 @@
 # Description
 
-
 A non-indented bullet list ...
 - ```$VAR``` single line entry - (level 0)
   - ```$VAR``` single line entry - (level 1)
