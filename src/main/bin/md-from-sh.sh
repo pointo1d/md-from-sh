@@ -65,7 +65,9 @@
 #                     - Script level.
 #                     - Function level.
 #                   - Generation timestamp and repo version/tag.
-#                   - Distributed sections - append/overwrite.
+#                   - Distributed sections
+#                     - append.
+#                     - ~overwrite.~
 #                 - Warnings
 #                   - Enable.
 #                   - Fatal.
