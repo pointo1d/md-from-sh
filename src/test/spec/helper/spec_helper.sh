@@ -39,33 +39,11 @@ specfile-setup() {
     FILE_EXAMPLES_DIR="$EXAMPLES_DIR/file"
 }
 
-##find-test-file() {
-##  local fnms=() dir=$1 ext=$2 ; shift 2 ; args=( ${@} )
-##
-##  local dec2bin=() ; eval "dec2bin=( $(printf "{0..1}%.0s" $(seq 1 $#)) )"
-##
-##  local i ; for i in $(seq $((${#dec2bin[@]}-1)) -1 0) ; do
-##    local nm=''
-##    local a ; for a in $(seq 0 $((${#dec2bin[$i]} - 1))) ; do
-##      test ${dec2bin[$i]:$a:1} = 1 && nm+=${args[$a]}
-##      nm+='-'
-##    done
-##
-##    nm=$dir/${nm%-}.$ext
-##    test -f $nm || continue
-##
-##    printf "$nm"
-##    break
-##  done
-##}
-
 find-test-file() {
-#set -x
-#: find-test-file $@
   local dnm=${1:-$SHELLSPEC_SPECFILE%/*} ext=$2 ; shift 2 ; local args=($@)
 
   local fnms=() ; 
-  eval maps="($(for ((i=1;i<=${#args[@]};i++)) ; do printf "{0..1}" ; done))"
+  eval maps="($(for ((i=1;i<=${#args[@]};i++)) ; do printf "{1..0}" ; done))"
 
   for map in ${maps[@]} ; do
     local c= fnm= ; for ((c=0;c<${#map};c++)) ; do
