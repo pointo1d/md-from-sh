@@ -10,7 +10,8 @@
 #               -l  - list the configured section titles c/w the ordering in
 #                     which they appear in the output.
 #               -w  - enable warnings.
-#               -R  - generate own README.
+#               -R  - generate README.
+#               -S  - 
 #               -W  - enable fatal warnings (implies '-w').
 # Args:         Fname - the name of the input file
 # Returns:      - 0 - iff no problems
@@ -56,15 +57,19 @@
 #                 - Generate own README i.e. README for this script.
 #                 - Content generation
 #                   - Default section.
-#                   - ToC section.
+#                   - ToC section generation.
 #                   - Synopsis generation
 #                     - Script level.
 #                     - Function level.
-#                   - Generation timestamp.
+#                   - Opts & Args lists generation
+#                     - Script level.
+#                     - Function level.
+#                   - Generation timestamp and repo version/tag.
+#                   - Distributed sections - append/overwrite.
 #                 - Warnings
 #                   - Enable.
 #                   - Fatal.
-#                 - Output filename, default - ${infile/.sh/.md}.
+#                 - Default input/output filenames, default - ${infile/.sh/.md}.
 #                 - ~Extend '-l' processing to cater for '-d' to specify show
 #                   section(s) having default gerenerator(s).~
 #               - ~Removal of the lookahead requirement renders the file
@@ -110,8 +115,8 @@ declare SHOPT="$(shopt -op xtrace)"
 shopt -ou xtrace
 
 declare \
-  Fname LineNo LineContent GenDefaultContent Warnings FatalWarnings OwnREADME \
-  ListSections Break Sections=() Indents=() HdrContentOrder=(
+  Fname LineNo LineContent GenDefaultContent Warnings FatalWarnings GenREADME \
+  ListSections Break DistSectAppend Sections=() Indents=() HdrContentOrder=(
     'Synopsis' 'Description' 'Where' 'Opts' 'Args' 'Returns' 'Env Vars' 'Notes'
   ) \
   FuncHdrOrder=( 'Function' "${HdrContentOrder[@]}" ) \
@@ -294,7 +299,6 @@ line.parser.non-doc() {
 # ------------------------------------------------------------------------------
 line.parser.doc-ignore() {
   :
-##  Break=t
 }
 
 # ------------------------------------------------------------------------------
@@ -373,17 +377,9 @@ line.parser.dispatch() {
 
   case $handler in
     *.sect-header)    dispatch-it $handler "${args%%*( )}" ;;
-##    func-defn-prv)  dispatch-it doc.builder.block.abort
-##                    Break=t
-##                    ;;
-##    func-defn-pub)  dispatch-it doc.builder.block.end 
-##                    Break=t
-##                    ;;
     *para-blank)      dispatch-it doc.builder.para.end
                       dispatch-it line.parser.$handler
                       ;;
-##    non-doc*|\
-##    para-ignore)    Break=t ;;
     *)                dispatch-it $handler "${args%%*( )}"
                       ;;
   esac
@@ -490,17 +486,22 @@ doc.builder.sect.end() {
   line.parser.dispatch -h doc.builder.para.end
 
   case ${Sect[title]:+y} in
-    y)  # Ensure an open paragraph is appended to the section body - by
-        # simulating an end-of-paragraph situation
-##        line.parser.para-blank
-        
-        # Now do the section body itself - note that the section body is
+    y)  # Now do the section body itself - note that the section body is
         # prefixed by the line number on which the header was detected
-        Content[${Sect[title]}]="${Sect[lineno]} ${Sect[content]}"
+        case ${DistSectAppend:+y} in
+          y)  # Non-default section end treatment i.e. append current to
+              # existing
+              Content[${Sect[title]}]+="${Sect[content]}"
+              ;;
+          *)  Content[${Sect[title]}]="${Sect[lineno]} ${Sect[content]}"
+              ;;
+        esac
+        
         : $(declare -p Content)
         ;;
   esac
 
+  # Reset the section
   Sect=( [title]= [lineno]= [content]= )
 }
 
@@ -744,21 +745,6 @@ line.parser.para-list-entry-var() {
 
 #line.parser.para-list-entry-var-append() { line.parser.append -n "$1" ; }
 
-### ------------------------------------------------------------------------------
-### Description:  Dummy handler - provisioned solely to accept ignored
-###               lines i.e. prevent them (ignored lines) from terminating the
-###               script.
-### Env Vars:     None. 
-### ------------------------------------------------------------------------------
-##line.parser.ignore() {
-##  # Line is to be ignored, but close out any open section
-##  case "${Sect[title]:+y}" in y) doc.builder.sect.end ;; esac
-##
-##  case "${Content[*]:-n}" in n) return ;; esac
-##
-##  Break=t
-##}
-
 # ------------------------------------------------------------------------------
 # ------------------------------------------------------------------------------
 # Doc generator routines
@@ -836,8 +822,6 @@ doc.generator.generate-sect() {
         ;;
   esac
 
-##  case "${#content}" in 0) return ;; esac
-
   case "$sect" in
    File)  printf "# $content" ;;
    *)     printf "# $1\n\n$content" ;;
@@ -902,21 +886,24 @@ Note that aliases/alternatives are indicated using the pipe ('|') symbol
 ################################################################################
 
 declare OPTARG OPTIND opt
-while getopts 'dlwW' opt ; do
+while getopts 'dlwSW' opt ; do
   case $opt in
-    d)  #H# Enable default content or, for 'l' opt only, reporting thereof, default - disabled
+    d)  # Enable default content or, for 'l' opt only, reporting thereof, default - disabled
         GenDefaultContent=t
         ;;
-    l)  #H# List configured section names/titles
+    l)  # List configured section names/titles
         ListSections=t
         ;;
-    w)  #H# Enable warnings, default - disabled
+    w)  # Enable warnings, default - disabled
         Warnings=t
         ;;
-    R)  #H# Generate README for this file
-        OwnREADME=t
+    R)  # Generate README for the source file
+        GenREADME=t
         ;;
-    W)  #H# Enable fatal warnings (implies '-w'), default - disabled
+    S)  # Distributed section append, default - overwrite
+        DistSectAppend=t
+        ;;
+    W)  # Enable fatal warnings (implies '-w'), default - disabled
         FatalWarnings=t
         ;;
   esac
@@ -931,7 +918,7 @@ case ${ListSections:+y} in
 esac
 
 # Determine the source script filename
-declare Fname ; case "${OwnREADME:-n}" in
+declare Fname ; case "${GenREADME:-n}" in
   n)  Fname="${1:-'-'}" ;;
   *)  Fname=$0 ;;
 esac
